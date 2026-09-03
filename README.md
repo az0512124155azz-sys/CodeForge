@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.15**
+**Bootstrap version: 0.0.16**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 
@@ -24,8 +24,10 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - GitHub controls include sign-in/out, account status, repository listing, repository creation, clone, push, pull, sync and reading a file directly from a repository through the GitHub API.
 - GitHub OAuth scopes are configurable so users can reduce account access when their workflow permits it.
 - CodeForge MCP controls use the full MCP implementation already present in the Code-OSS workbench: server management, add server, installed servers, resources, configuration and trust controls.
-- CodeForge platform TypeScript configuration uses the same VS Code and Node type environment used by Code-OSS extensions.
-- A GitHub Actions validation workflow type-checks the CodeForge platform extension and validates its manifest. The first validation exposed an incorrect extension type environment and that CI configuration has been corrected.
+- Safety Timeline creates recoverable Git-backed checkpoints through a temporary Git index, so it can capture tracked and new nonignored files without changing the user's real staging area or moving the active branch.
+- Safety Timeline can restore a checkpoint without moving the branch pointer, creates a safety checkpoint before restore, and can create isolated `codeforge/ai/...` branches for AI tasks.
+- Build Center can automatically create a Safety Timeline checkpoint before a build.
+- CodeForge platform TypeScript validation and extension manifest validation are green in GitHub Actions after the latest Safety Timeline integration.
 
 ## Product direction
 
@@ -34,7 +36,6 @@ CodeForge is being developed as a daily-use desktop IDE for Windows, macOS and L
 - Rich Build Center UI with detailed stages, artifacts, diagnostics and persistent history.
 - MCP build-event routing so authorized MCP-connected AI can receive sanitized failures automatically.
 - GitHub release publishing for successful build artifacts.
-- Safety Timeline and Git-backed recovery checkpoints.
 - Secure permission broker so models can invoke authorized actions without receiving raw access tokens.
 - Session restoration and close/shutdown protection for unsaved files and running jobs.
 - Cross-platform CodeForge packaging and installer validation on Windows, macOS and Linux.
