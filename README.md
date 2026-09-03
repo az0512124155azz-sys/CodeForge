@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.4**
+**Bootstrap version: 0.0.6**
 
 CodeForge is a production-grade desktop IDE built on the open-source Code - OSS foundation, with first-class AI, MCP, GitHub, and cross-platform application build tooling.
 
