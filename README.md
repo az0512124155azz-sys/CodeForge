@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.17**
+**Bootstrap version: 0.0.18**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 
@@ -25,19 +25,20 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - GitHub controls include sign-in/out, account status, repository listing, repository creation, clone, push, pull, sync and reading a file directly from a repository through the GitHub API.
 - GitHub OAuth scopes are configurable so users can reduce account access when their workflow permits it.
 - CodeForge MCP controls use the full MCP implementation already present in the Code-OSS workbench: server management, add server, installed servers, resources, configuration and trust controls.
+- Failed builds can be routed through the local MCP gateway to an explicitly allowed `build.failed`, `build_failed` or `analyze_build_failure` tool. CodeForge fingerprints persistent grants, supports one-time approval and clears its grants with Reset MCP trust.
+- MCP build-failure payloads exclude environment variables and raw logs, redact credential patterns and high-entropy values, hide home-directory identities, and enforce loopback-only gateway access plus a 1 MB response limit.
 - Safety Timeline creates recoverable Git-backed checkpoints through a temporary Git index, so it can capture tracked and new nonignored files without changing the user's real staging area or moving the active branch.
 - Safety Timeline can restore a checkpoint without moving the branch pointer, creates a safety checkpoint before restore, and can create isolated `codeforge/ai/...` branches for AI tasks.
 - Build Center can automatically create a Safety Timeline checkpoint before a build.
-- CodeForge platform TypeScript validation and extension manifest validation are green in GitHub Actions after the latest Safety Timeline integration.
+- CodeForge Platform and Core validation are green in GitHub Actions after the secure MCP build-failure routing integration.
 
 ## Product direction
 
 CodeForge is being developed as a daily-use desktop IDE for Windows, macOS and Linux, with additional Android build tooling. Next major work includes:
 
 - Rich Build Center UI with detailed stages, artifacts, diagnostics and persistent history.
-- MCP build-event routing so authorized MCP-connected AI can receive sanitized failures automatically.
 - GitHub release publishing for successful build artifacts.
-- Secure permission broker so models can invoke authorized actions without receiving raw access tokens.
+- Expand the MCP permission broker beyond build failures so models can invoke additional narrowly authorized actions without receiving raw access tokens.
 - Session restoration and close/shutdown protection for unsaved files and running jobs.
 - Cross-platform CodeForge packaging and installer validation on Windows, macOS and Linux.
 
