@@ -2,7 +2,7 @@
   "name": "codeforge-platform",
   "displayName": "CodeForge Platform",
   "description": "Core CodeForge integration for Build Center, AI, MCP and GitHub workflows.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "codeforge",
   "license": "MIT",
   "engines": {
@@ -14,6 +14,9 @@
     "onCommand:codeforge.openBuildCenter",
     "onCommand:codeforge.cancelBuild",
     "onCommand:codeforge.analyzeLastBuild",
+    "onCommand:codeforge.testAIConnection",
+    "onCommand:codeforge.setBionicApiKey",
+    "onCommand:codeforge.clearBionicApiKey",
     "onCommand:codeforge.openAI",
     "onCommand:codeforge.openMCP",
     "onCommand:codeforge.openGitHub"
@@ -34,11 +37,23 @@
       },
       {
         "command": "codeforge.analyzeLastBuild",
-        "title": "CodeForge: Analyze Last Failed Build"
+        "title": "CodeForge: Ask AI Why Last Build Failed"
+      },
+      {
+        "command": "codeforge.testAIConnection",
+        "title": "CodeForge: Test AI Connection"
+      },
+      {
+        "command": "codeforge.setBionicApiKey",
+        "title": "CodeForge: Set Bionic API Key Securely"
+      },
+      {
+        "command": "codeforge.clearBionicApiKey",
+        "title": "CodeForge: Clear Bionic API Key"
       },
       {
         "command": "codeforge.openAI",
-        "title": "CodeForge: Open AI Settings"
+        "title": "CodeForge: Open AI"
       },
       {
         "command": "codeforge.openMCP",
@@ -56,7 +71,7 @@
           "type": "string",
           "enum": ["auto", "ollama", "bionic"],
           "default": "auto",
-          "description": "AI provider used by CodeForge."
+          "description": "AI provider used by CodeForge. Auto tries Ollama first and then Bionic/OpenAI-compatible."
         },
         "codeforge.ai.ollamaEndpoint": {
           "type": "string",
@@ -71,12 +86,19 @@
         "codeforge.ai.model": {
           "type": "string",
           "default": "auto",
-          "description": "Preferred coding model. Use auto to let CodeForge select an available model."
+          "description": "Preferred coding model. Use auto to let CodeForge select the best-looking coding model reported by the provider."
+        },
+        "codeforge.ai.requestTimeoutMs": {
+          "type": "number",
+          "default": 120000,
+          "minimum": 5000,
+          "maximum": 600000,
+          "description": "Maximum time CodeForge waits for an AI analysis request."
         },
         "codeforge.build.autoAnalyzeFailures": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically prepare sanitized build diagnostics for the connected AI provider when a build fails."
+          "description": "Automatically send sanitized build diagnostics to the connected local AI provider when a build fails."
         },
         "codeforge.github.clientId": {
           "type": "string",
