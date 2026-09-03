@@ -3,7 +3,7 @@ import { execFile } from 'child_process';
 import { promises as fs } from 'fs';
 import * as path from 'path';
 import { BuildArtifact, findFreshBuildArtifacts, formatArtifactSize } from './artifacts';
-import { GitHubRepository, GitHubService } from './github';
+import { GitHubService } from './github';
 import { OperationState } from './operations';
 
 interface ProjectMetadata {
