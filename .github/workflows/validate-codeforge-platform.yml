@@ -1,0 +1,40 @@
+name: Validate CodeForge Platform
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'extensions/codeforge-platform/**'
+      - '.github/workflows/validate-codeforge-platform.yml'
+      - 'README.md'
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck:
+    name: Type-check CodeForge platform
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout CodeForge
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - name: Install repository dependencies without postinstall downloads
+        run: npm ci --ignore-scripts
+
+      - name: Type-check CodeForge platform extension
+        run: npx tsc --project extensions/codeforge-platform/tsconfig.json --noEmit
+
+      - name: Validate extension manifest JSON
+        run: node -e "JSON.parse(require('fs').readFileSync('extensions/codeforge-platform/package.json','utf8')); console.log('CodeForge manifest OK')"
