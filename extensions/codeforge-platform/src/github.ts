@@ -227,64 +227,67 @@ export class GitHubService {
 
     const authorizationCode = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
       let settled = false;
+      let timeout: NodeJS.Timeout | undefined;
+      const finish = (callback: () => void): void => {
+        if (settled) return;
+        settled = true;
+        if (timeout) clearTimeout(timeout);
+        callback();
+        setTimeout(() => server.close(), 50);
+      };
+
       const server = http.createServer((request, response) => {
-        try {
-          const requestUrl = new URL(request.url ?? '/', `http://127.0.0.1`);
-          if (requestUrl.pathname !== callback.pathname) {
-            response.statusCode = 404;
-            response.end('Not found');
-            return;
-          }
-          const returnedState = requestUrl.searchParams.get('state');
-          const error = requestUrl.searchParams.get('error');
-          const description = requestUrl.searchParams.get('error_description');
-          const code = requestUrl.searchParams.get('code');
-          if (returnedState !== state) {
-            response.statusCode = 400;
-            response.end('CodeForge rejected the callback because the OAuth state did not match.');
-            if (!settled) reject(new Error('GitHub OAuth state validation failed.'));
-          } else if (error) {
-            response.statusCode = 400;
-            response.end('GitHub authorization was not completed. You can return to CodeForge.');
-            if (!settled) reject(new Error(description ?? error));
-          } else if (!code) {
-            response.statusCode = 400;
-            response.end('Missing authorization code.');
-            if (!settled) reject(new Error('GitHub callback did not include an authorization code.'));
-          } else {
-            response.statusCode = 200;
-            response.setHeader('Content-Type', 'text/html; charset=utf-8');
-            response.end('<!doctype html><html><body style="font-family:system-ui;background:#111;color:#eee;padding:40px"><h2>CodeForge connected to GitHub</h2><p>You can close this browser tab and return to CodeForge.</p></body></html>');
-            if (!settled) {
-              const address = server.address();
-              if (!address || typeof address === 'string') {
-                reject(new Error('CodeForge could not determine the loopback callback port.'));
-              } else {
-                resolve({ code, redirectUri: `http://127.0.0.1:${address.port}${callback.pathname}` });
-              }
-            }
-          }
-        } finally {
-          if (!settled) settled = true;
-          setTimeout(() => server.close(), 50);
+        const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
+        if (requestUrl.pathname !== callback.pathname) {
+          response.statusCode = 404;
+          response.end('Not found');
+          return;
         }
+
+        const returnedState = requestUrl.searchParams.get('state');
+        const error = requestUrl.searchParams.get('error');
+        const description = requestUrl.searchParams.get('error_description');
+        const code = requestUrl.searchParams.get('code');
+
+        if (returnedState !== state) {
+          response.statusCode = 400;
+          response.end('CodeForge rejected the callback because the OAuth state did not match.');
+          finish(() => reject(new Error('GitHub OAuth state validation failed.')));
+          return;
+        }
+        if (error) {
+          response.statusCode = 400;
+          response.end('GitHub authorization was not completed. You can return to CodeForge.');
+          finish(() => reject(new Error(description ?? error)));
+          return;
+        }
+        if (!code) {
+          response.statusCode = 400;
+          response.end('Missing authorization code.');
+          finish(() => reject(new Error('GitHub callback did not include an authorization code.')));
+          return;
+        }
+
+        const address = server.address();
+        if (!address || typeof address === 'string') {
+          response.statusCode = 500;
+          response.end('CodeForge could not determine the callback port.');
+          finish(() => reject(new Error('CodeForge could not determine the loopback callback port.')));
+          return;
+        }
+
+        response.statusCode = 200;
+        response.setHeader('Content-Type', 'text/html; charset=utf-8');
+        response.end('<!doctype html><html><body style="font-family:system-ui;background:#111;color:#eee;padding:40px"><h2>CodeForge connected to GitHub</h2><p>You can close this browser tab and return to CodeForge.</p></body></html>');
+        finish(() => resolve({ code, redirectUri: `http://127.0.0.1:${address.port}${callback.pathname}` }));
       });
 
-      server.on('error', error => {
-        if (!settled) {
-          settled = true;
-          reject(error);
-        }
-      });
+      server.on('error', error => finish(() => reject(error)));
 
       server.listen(0, '127.0.0.1', async () => {
         const address = server.address();
         if (!address || typeof address === 'string') {
-          if (!settled) {
-            settled = true;
-            reject(new Error('CodeForge could not open the GitHub callback listener.'));
-          }
-          server.close();
+          finish(() => reject(new Error('CodeForge could not open the GitHub callback listener.')));
           return;
         }
         const redirectUri = `http://127.0.0.1:${address.port}${callback.pathname}`;
@@ -297,20 +300,12 @@ export class GitHubService {
         authorize.searchParams.set('code_challenge_method', 'S256');
         authorize.searchParams.set('prompt', 'select_account');
         const opened = await vscode.env.openExternal(vscode.Uri.parse(authorize.toString()));
-        if (!opened && !settled) {
-          settled = true;
-          server.close();
-          reject(new Error('CodeForge could not open the GitHub authorization page.'));
+        if (!opened) {
+          finish(() => reject(new Error('CodeForge could not open the GitHub authorization page.')));
         }
       });
 
-      setTimeout(() => {
-        if (!settled) {
-          settled = true;
-          server.close();
-          reject(new Error('GitHub sign-in timed out after five minutes.'));
-        }
-      }, 5 * 60 * 1000);
+      timeout = setTimeout(() => finish(() => reject(new Error('GitHub sign-in timed out after five minutes.'))), 5 * 60 * 1000);
     });
 
     await this.exchangeToken(new URLSearchParams({
