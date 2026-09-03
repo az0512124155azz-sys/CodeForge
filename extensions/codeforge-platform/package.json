@@ -2,19 +2,20 @@
   "name": "codeforge-platform",
   "displayName": "CodeForge Platform",
   "description": "Core CodeForge integration for Build Center, AI, MCP, GitHub and Safety Timeline workflows.",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "publisher": "codeforge",
   "license": "MIT",
   "icon": "media/codeforge.png",
   "engines": {
     "vscode": "^1.100.0"
   },
-  "main": "./out/extension",
+  "main": "./out/bootstrap",
   "activationEvents": [
     "onStartupFinished",
     "onCommand:codeforge.openBuildCenter",
     "onCommand:codeforge.cancelBuild",
     "onCommand:codeforge.cancelActiveOperations",
+    "onCommand:codeforge.publishRecentBuild",
     "onCommand:codeforge.analyzeLastBuild",
     "onCommand:codeforge.testAIConnection",
     "onCommand:codeforge.setBionicApiKey",
@@ -64,6 +65,7 @@
       { "command": "codeforge.openBuildCenter", "title": "CodeForge: Open Build Center" },
       { "command": "codeforge.cancelBuild", "title": "CodeForge: Cancel Active Build" },
       { "command": "codeforge.cancelActiveOperations", "title": "CodeForge: Cancel Active Operations" },
+      { "command": "codeforge.publishRecentBuild", "title": "CodeForge: Publish Recent Build to GitHub Release" },
       { "command": "codeforge.analyzeLastBuild", "title": "CodeForge: Ask AI Why Last Build Failed" },
       { "command": "codeforge.testAIConnection", "title": "CodeForge: Test AI Connection" },
       { "command": "codeforge.setBionicApiKey", "title": "CodeForge: Set Bionic API Key Securely" },
@@ -123,6 +125,26 @@
           "default": true,
           "description": "Automatically send sanitized build diagnostics to the connected local AI provider when a build fails."
         },
+        "codeforge.build.artifactDirectories": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["dist", "release", "releases", "out", "build", "target/release", "app/build/outputs", "android/app/build/outputs"],
+          "description": "Workspace-relative directories CodeForge scans for fresh installer/application artifacts after a build."
+        },
+        "codeforge.build.artifactScanDepth": {
+          "type": "number",
+          "default": 5,
+          "minimum": 1,
+          "maximum": 8,
+          "description": "Maximum directory depth CodeForge scans inside configured artifact directories."
+        },
+        "codeforge.build.recentArtifactMinutes": {
+          "type": "number",
+          "default": 60,
+          "minimum": 1,
+          "maximum": 1440,
+          "description": "Time window used by the manual Publish Recent Build command when an exact build start time is not available."
+        },
         "codeforge.github.clientId": {
           "type": "string",
           "default": "",
@@ -138,6 +160,11 @@
           "items": { "type": "string" },
           "default": ["repo", "read:user"],
           "description": "GitHub OAuth scopes requested by CodeForge. Reduce these to limit account access when your workflow allows it."
+        },
+        "codeforge.github.offerReleaseAfterBuild": {
+          "type": "boolean",
+          "default": true,
+          "description": "Offer to publish fresh installer/application artifacts to a GitHub Release when a CodeForge build finishes."
         },
         "codeforge.mcp.autoSendBuildFailures": {
           "type": "boolean",
