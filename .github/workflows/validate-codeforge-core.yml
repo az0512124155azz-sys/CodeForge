@@ -17,7 +17,7 @@ jobs:
   typecheck-core:
     name: Type-check CodeForge workbench core
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - name: Checkout CodeForge
         uses: actions/checkout@v4
@@ -30,8 +30,8 @@ jobs:
           node-version-file: '.nvmrc'
           cache: npm
 
-      - name: Install repository dependencies without postinstall downloads
-        run: npm ci --ignore-scripts
+      - name: Install Code-OSS dependencies
+        run: npm ci
 
       - name: Type-check Code-OSS client with CodeForge core
         run: npm run typecheck-client
