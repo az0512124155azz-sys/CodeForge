@@ -15,6 +15,8 @@ export interface OperationSnapshot {
 export class OperationState implements vscode.Disposable {
   private readonly active = new Map<OperationKind, OperationEntry>();
   private readonly changeEmitter = new vscode.EventEmitter<void>();
+  private dashboardRegistration: vscode.Disposable | undefined;
+  private dashboard: vscode.Disposable | undefined;
   readonly onDidChange = this.changeEmitter.event;
 
   private runningKey(kind: OperationKind): string {
@@ -27,6 +29,10 @@ export class OperationState implements vscode.Disposable {
 
   async initialize(): Promise<void> {
     await Promise.all((['build', 'ai', 'git'] as OperationKind[]).map(kind => this.publish(kind, false, '')));
+    const { CodeForgeDashboard } = await import('./dashboard');
+    const dashboard = new CodeForgeDashboard(this);
+    this.dashboard = dashboard;
+    this.dashboardRegistration = vscode.window.registerTreeDataProvider('codeforge.dashboard', dashboard);
   }
 
   private async publish(kind: OperationKind, running: boolean, status: string): Promise<void> {
@@ -87,6 +93,8 @@ export class OperationState implements vscode.Disposable {
   }
 
   dispose(): void {
+    this.dashboardRegistration?.dispose();
+    this.dashboard?.dispose();
     this.changeEmitter.dispose();
   }
 }
