@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
 import { AIService, sanitizeDiagnosticText } from './ai';
+import { GitHubRepository, GitHubService } from './github';
+import { addMCPServer, browseMCPResources, openMCPConfiguration, openMCPControlCenter, openMCPManager, showInstalledMCPServers } from './mcp';
 
 interface BuildRecipe {
   id: string;
@@ -122,16 +124,13 @@ function inferBuildStage(text: string, fallback: string): string {
 
 async function averageDuration(context: vscode.ExtensionContext, recipeId: string): Promise<number | undefined> {
   const values = context.globalState.get<number[]>(`codeforge.build.history.${recipeId}`, []);
-  if (!values.length) {
-    return undefined;
-  }
+  if (!values.length) return undefined;
   return Math.round(values.reduce((a, b) => a + b, 0) / values.length);
 }
 
 async function rememberDuration(context: vscode.ExtensionContext, recipeId: string, duration: number): Promise<void> {
   const values = context.globalState.get<number[]>(`codeforge.build.history.${recipeId}`, []);
-  const next = [...values, duration].slice(-10);
-  await context.globalState.update(`codeforge.build.history.${recipeId}`, next);
+  await context.globalState.update(`codeforge.build.history.${recipeId}`, [...values, duration].slice(-10));
 }
 
 async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, output: vscode.OutputChannel): Promise<void> {
@@ -155,27 +154,13 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
   output.appendLine(`Workspace: ${recipe.cwd}`);
   output.appendLine('');
 
-  await vscode.window.withProgress({
-    location: vscode.ProgressLocation.Notification,
-    title: `CodeForge: ${recipe.label}`,
-    cancellable: true
-  }, async (progress, token) => {
-    return new Promise<void>((resolve) => {
-      activeBuild = spawn(recipe.command, recipe.args, {
-        cwd: recipe.cwd,
-        env: process.env,
-        shell: false,
-        windowsHide: true
-      });
-
+  await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `CodeForge: ${recipe.label}`, cancellable: true }, async (progress, token) => {
+    return new Promise<void>(resolve => {
+      activeBuild = spawn(recipe.command, recipe.args, { cwd: recipe.cwd, env: process.env, shell: false, windowsHide: true });
       const timer = setInterval(() => {
         const elapsed = Date.now() - startedAt;
         const eta = expected ? Math.max(0, expected - elapsed) : undefined;
-        progress.report({
-          message: eta === undefined
-            ? `${stage} · Elapsed ${formatDuration(elapsed)} · ETA learning…`
-            : `${stage} · Elapsed ${formatDuration(elapsed)} · ETA ~${formatDuration(eta)}`
-        });
+        progress.report({ message: eta === undefined ? `${stage} · Elapsed ${formatDuration(elapsed)} · ETA learning…` : `${stage} · Elapsed ${formatDuration(elapsed)} · ETA ~${formatDuration(eta)}` });
       }, 1000);
 
       token.onCancellationRequested(() => {
@@ -192,7 +177,6 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
         stage = inferBuildStage(text, stage);
         output.append(text);
       };
-
       activeBuild.stdout.on('data', onData);
       activeBuild.stderr.on('data', onData);
 
@@ -218,15 +202,11 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
         await rememberDuration(context, recipe.id, duration);
         lastBuild = { recipe, startedAt, finishedAt, exitCode: code, log };
         activeBuild = undefined;
-
         output.appendLine('');
         output.appendLine(code === 0 ? `BUILD SUCCESSFUL · ${formatDuration(duration)}` : `BUILD FAILED (${code ?? 'unknown'}) · ${formatDuration(duration)}`);
-
         if (code === 0) {
           void vscode.window.showInformationMessage(`CodeForge build succeeded in ${formatDuration(duration)}.`, 'Open Build Output').then(action => {
-            if (action === 'Open Build Output') {
-              output.show(true);
-            }
+            if (action === 'Open Build Output') output.show(true);
           });
         } else {
           await handleBuildFailure(context, lastBuild);
@@ -243,11 +223,8 @@ async function handleBuildFailure(context: vscode.ExtensionContext, result: Buil
     await vscode.commands.executeCommand('codeforge.analyzeLastBuild');
     return;
   }
-
   const action = await vscode.window.showErrorMessage(`Build failed: ${result.recipe.label}`, 'Ask AI why', 'Open Output');
-  if (action === 'Ask AI why') {
-    await vscode.commands.executeCommand('codeforge.analyzeLastBuild');
-  }
+  if (action === 'Ask AI why') await vscode.commands.executeCommand('codeforge.analyzeLastBuild');
 }
 
 async function openBuildCenter(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<void> {
@@ -256,38 +233,21 @@ async function openBuildCenter(context: vscode.ExtensionContext, output: vscode.
     void vscode.window.showWarningMessage('Open a project folder before using CodeForge Build Center.');
     return;
   }
-
   const recipes = await detectBuildRecipes(root);
   if (!recipes.length) {
     void vscode.window.showWarningMessage('CodeForge did not detect a supported build system in this workspace.');
     return;
   }
-
   const items = await Promise.all(recipes.map(async recipe => {
     const avg = await averageDuration(context, recipe.id);
-    return {
-      label: recipe.label,
-      description: recipe.target,
-      detail: avg ? `Average previous build: ${formatDuration(avg)}` : 'No timing history yet',
-      recipe
-    };
+    return { label: recipe.label, description: recipe.target, detail: avg ? `Average previous build: ${formatDuration(avg)}` : 'No timing history yet', recipe };
   }));
-
-  const selected = await vscode.window.showQuickPick(items, {
-    title: 'CodeForge Build Center',
-    placeHolder: 'Choose a detected build target'
-  });
-  if (selected) {
-    await runBuild(context, selected.recipe, output);
-  }
+  const selected = await vscode.window.showQuickPick(items, { title: 'CodeForge Build Center', placeHolder: 'Choose a detected build target' });
+  if (selected) await runBuild(context, selected.recipe, output);
 }
 
 async function showAIAnalysis(ai: AIService, result: BuildResult): Promise<void> {
-  const analysis = await vscode.window.withProgress({
-    location: vscode.ProgressLocation.Notification,
-    title: 'CodeForge AI: analyzing failed build…',
-    cancellable: false
-  }, async () => ai.analyzeBuildFailure({
+  const analysis = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'CodeForge AI: analyzing failed build…', cancellable: false }, async () => ai.analyzeBuildFailure({
     target: result.recipe.target,
     recipe: result.recipe.label,
     command: result.recipe.command,
@@ -295,27 +255,9 @@ async function showAIAnalysis(ai: AIService, result: BuildResult): Promise<void>
     exitCode: result.exitCode,
     log: sanitizeDiagnosticText(result.log)
   }));
-
-  const document = await vscode.workspace.openTextDocument({
-    language: 'markdown',
-    content: [
-      '# CodeForge Build Doctor',
-      '',
-      `**Provider:** ${analysis.provider}`,
-      `**Model:** ${analysis.model}`,
-      `**Target:** ${result.recipe.target}`,
-      `**Recipe:** ${result.recipe.label}`,
-      `**Exit code:** ${result.exitCode ?? 'unknown'}`,
-      '',
-      '## Diagnosis',
-      '',
-      analysis.content,
-      '',
-      '---',
-      '',
-      '> CodeForge sanitized build output before sending it to the model. Provider credentials are stored separately and are never included in the prompt.'
-    ].join('\n')
-  });
+  const document = await vscode.workspace.openTextDocument({ language: 'markdown', content: [
+    '# CodeForge Build Doctor', '', `**Provider:** ${analysis.provider}`, `**Model:** ${analysis.model}`, `**Target:** ${result.recipe.target}`, `**Recipe:** ${result.recipe.label}`, `**Exit code:** ${result.exitCode ?? 'unknown'}`, '', '## Diagnosis', '', analysis.content, '', '---', '', '> CodeForge sanitized build output before sending it to the model. Provider credentials are stored separately and are never included in the prompt.'
+  ].join('\n') });
   await vscode.window.showTextDocument(document, { preview: false });
 }
 
@@ -326,12 +268,8 @@ async function openAIControl(ai: AIService): Promise<void> {
     { label: '$(key) Set/replace Bionic API key', id: 'setKey' },
     { label: '$(trash) Clear Bionic API key', id: 'clearKey' }
   ], { title: 'CodeForge AI', placeHolder: 'Manage Ollama / Bionic AI' });
-
   if (!selection) return;
-  if (selection.id === 'settings') {
-    await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.ai');
-    return;
-  }
+  if (selection.id === 'settings') return void await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.ai');
   if (selection.id === 'setKey') {
     const changed = await ai.setBionicApiKey();
     if (changed) void vscode.window.showInformationMessage('CodeForge securely updated the Bionic API key.');
@@ -345,77 +283,157 @@ async function openAIControl(ai: AIService): Promise<void> {
   await vscode.commands.executeCommand('codeforge.testAIConnection');
 }
 
+async function chooseRepository(github: GitHubService, title: string): Promise<GitHubRepository | undefined> {
+  const repositories = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'CodeForge: loading GitHub repositories…', cancellable: false }, () => github.listRepositories());
+  const selection = await vscode.window.showQuickPick(repositories.map(repository => ({
+    label: repository.full_name,
+    description: repository.private ? 'Private' : 'Public',
+    detail: repository.description ?? repository.html_url,
+    repository
+  })), { title, placeHolder: 'Choose a GitHub repository', matchOnDescription: true, matchOnDetail: true });
+  return selection?.repository;
+}
+
+async function createGitHubRepository(github: GitHubService): Promise<void> {
+  const name = await vscode.window.showInputBox({ title: 'Create GitHub Repository', prompt: 'Repository name', validateInput: value => /^[A-Za-z0-9._-]+$/.test(value) ? undefined : 'Use letters, numbers, dot, underscore or hyphen.' });
+  if (!name) return;
+  const visibility = await vscode.window.showQuickPick([{ label: 'Private', private: true }, { label: 'Public', private: false }], { title: 'Repository visibility' });
+  if (!visibility) return;
+  const description = await vscode.window.showInputBox({ title: 'Repository description', prompt: 'Optional description' });
+  const repository = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Creating ${name} on GitHub…`, cancellable: false }, () => github.createRepository(name, visibility.private, description));
+  const action = await vscode.window.showInformationMessage(`Created ${repository.full_name}.`, 'Open on GitHub', 'Clone');
+  if (action === 'Open on GitHub') await vscode.env.openExternal(vscode.Uri.parse(repository.html_url));
+  if (action === 'Clone') await vscode.commands.executeCommand('git.clone', repository.clone_url);
+}
+
+async function readGitHubFile(github: GitHubService): Promise<void> {
+  const repository = await chooseRepository(github, 'Read file from GitHub');
+  if (!repository) return;
+  const filePath = await vscode.window.showInputBox({ title: repository.full_name, prompt: 'Repository file path, for example src/main.ts' });
+  if (!filePath) return;
+  const ref = await vscode.window.showInputBox({ title: 'Branch / tag / commit', prompt: `Optional ref (default: ${repository.default_branch})`, value: repository.default_branch });
+  const file = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: `Reading ${filePath} from GitHub…`, cancellable: false }, () => github.readRepositoryFile(repository.full_name, filePath, ref || undefined));
+  const document = await vscode.workspace.openTextDocument({ content: file.text });
+  await vscode.window.showTextDocument(document, { preview: false });
+}
+
+async function openGitHubControl(github: GitHubService): Promise<void> {
+  const signedIn = await github.isSignedIn();
+  const action = await vscode.window.showQuickPick([
+    { label: signedIn ? '$(account) GitHub account status' : '$(sign-in) Sign in with GitHub', id: 'account' },
+    { label: '$(new-folder) Create GitHub repository', id: 'create' },
+    { label: '$(repo) Browse repositories', id: 'browse' },
+    { label: '$(repo-clone) Clone repository', id: 'clone' },
+    { label: '$(file-code) Read file from GitHub', id: 'read' },
+    { label: '$(cloud-upload) Push current repository', id: 'push' },
+    { label: '$(cloud-download) Pull current repository', id: 'pull' },
+    { label: '$(sync) Sync current repository', id: 'sync' },
+    { label: '$(settings-gear) GitHub settings', id: 'settings' },
+    ...(signedIn ? [{ label: '$(sign-out) Sign out of GitHub', id: 'signout' }] : [])
+  ], { title: 'CodeForge GitHub', placeHolder: signedIn ? 'GitHub connected' : 'GitHub not connected' });
+  if (!action) return;
+  switch (action.id) {
+    case 'account': {
+      const user = signedIn ? await github.getCurrentUser() : await github.signIn();
+      if (user) void vscode.window.showInformationMessage(`CodeForge is connected to GitHub as ${user.login}.`);
+      break;
+    }
+    case 'create':
+      await createGitHubRepository(github);
+      break;
+    case 'browse': {
+      const repository = await chooseRepository(github, 'CodeForge GitHub Repositories');
+      if (repository) await vscode.env.openExternal(vscode.Uri.parse(repository.html_url));
+      break;
+    }
+    case 'clone': {
+      const repository = await chooseRepository(github, 'Clone from GitHub');
+      if (repository) await vscode.commands.executeCommand('git.clone', repository.clone_url);
+      break;
+    }
+    case 'read':
+      await readGitHubFile(github);
+      break;
+    case 'push':
+      await vscode.commands.executeCommand('git.push');
+      break;
+    case 'pull':
+      await vscode.commands.executeCommand('git.pull');
+      break;
+    case 'sync':
+      await vscode.commands.executeCommand('git.sync');
+      break;
+    case 'settings':
+      await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.github');
+      break;
+    case 'signout':
+      await github.signOut();
+      void vscode.window.showInformationMessage('CodeForge signed out of GitHub and removed its stored token.');
+      break;
+  }
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('CodeForge Build');
   const ai = new AIService(context);
+  const github = new GitHubService(context);
   context.subscriptions.push(output);
 
-  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openBuildCenter', async () => {
-    await openBuildCenter(context, output);
-  }));
-
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openBuildCenter', async () => openBuildCenter(context, output)));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.cancelBuild', () => {
-    if (!activeBuild) {
-      void vscode.window.showInformationMessage('No CodeForge build is currently running.');
-      return;
-    }
+    if (!activeBuild) return void vscode.window.showInformationMessage('No CodeForge build is currently running.');
     activeBuild.kill();
   }));
-
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.analyzeLastBuild', async () => {
-    if (!lastBuild || lastBuild.exitCode === 0) {
-      void vscode.window.showInformationMessage('There is no failed build to analyze.');
-      return;
-    }
-
+    if (!lastBuild || lastBuild.exitCode === 0) return void vscode.window.showInformationMessage('There is no failed build to analyze.');
     try {
       await showAIAnalysis(ai, lastBuild);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       const action = await vscode.window.showErrorMessage(`CodeForge AI analysis failed: ${message}`, 'Test AI connection', 'Open AI settings');
-      if (action === 'Test AI connection') {
-        await vscode.commands.executeCommand('codeforge.testAIConnection');
-      } else if (action === 'Open AI settings') {
-        await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.ai');
-      }
+      if (action === 'Test AI connection') await vscode.commands.executeCommand('codeforge.testAIConnection');
+      if (action === 'Open AI settings') await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.ai');
     }
   }));
-
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.testAIConnection', async () => {
     try {
-      const result = await vscode.window.withProgress({
-        location: vscode.ProgressLocation.Notification,
-        title: 'CodeForge: detecting local AI…',
-        cancellable: false
-      }, async () => ai.testConnection());
+      const result = await vscode.window.withProgress({ location: vscode.ProgressLocation.Notification, title: 'CodeForge: detecting local AI…', cancellable: false }, () => ai.testConnection());
       const preview = result.models.slice(0, 5).join(', ') || 'none';
       void vscode.window.showInformationMessage(`CodeForge connected to ${result.provider}. Selected: ${result.selectedModel}. Models: ${preview}${result.models.length > 5 ? '…' : ''}`);
     } catch (error) {
       void vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
     }
   }));
-
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.setBionicApiKey', async () => {
     const changed = await ai.setBionicApiKey();
     if (changed) void vscode.window.showInformationMessage('Bionic API key stored securely.');
   }));
-
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.clearBionicApiKey', async () => {
     await ai.clearBionicApiKey();
     void vscode.window.showInformationMessage('Bionic API key cleared.');
   }));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openAI', async () => openAIControl(ai)));
 
-  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openAI', async () => {
-    await openAIControl(ai);
-  }));
-
-  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openMCP', async () => {
-    await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.mcp');
-  }));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openMCP', openMCPControlCenter));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.mcp.manage', openMCPManager));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.mcp.addServer', addMCPServer));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.mcp.installed', showInstalledMCPServers));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.mcp.resources', browseMCPResources));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.mcp.openConfig', openMCPConfiguration));
 
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.openGitHub', async () => {
-    await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.github');
+    try {
+      await openGitHubControl(github);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`CodeForge GitHub: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.github.signIn', async () => github.signIn()));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.github.createRepository', async () => createGitHubRepository(github)));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.github.readFile', async () => readGitHubFile(github)));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.github.push', async () => vscode.commands.executeCommand('git.push')));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.github.pull', async () => vscode.commands.executeCommand('git.pull')));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.github.sync', async () => vscode.commands.executeCommand('git.sync')));
 
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.status', () => {
     const root = workspaceRoot();
