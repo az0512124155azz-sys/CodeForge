@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
+import { AIService, sanitizeDiagnosticText } from './ai';
 
 interface BuildRecipe {
   id: string;
@@ -97,9 +98,26 @@ async function detectBuildRecipes(root: string): Promise<BuildRecipe[]> {
 
 function formatDuration(ms: number): string {
   const totalSeconds = Math.max(0, Math.floor(ms / 1000));
-  const minutes = Math.floor(totalSeconds / 60);
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
   const seconds = totalSeconds % 60;
+  if (hours > 0) {
+    return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+  }
   return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function inferBuildStage(text: string, fallback: string): string {
+  const value = text.toLowerCase();
+  if (/download|resolve|restore|install|dependency/.test(value)) return 'Resolving dependencies';
+  if (/configure|configuration|generating/.test(value)) return 'Configuring';
+  if (/compile|compiling|javac|kotlinc|typescript|tsc/.test(value)) return 'Compiling';
+  if (/link|linking|ld\b/.test(value)) return 'Linking';
+  if (/test|testing|pytest|jest|mocha/.test(value)) return 'Running tests';
+  if (/sign|signing|codesign/.test(value)) return 'Signing';
+  if (/package|packaging|bundle|bundling|assemble|archive/.test(value)) return 'Packaging';
+  if (/verify|validation|validate/.test(value)) return 'Verifying';
+  return fallback;
 }
 
 async function averageDuration(context: vscode.ExtensionContext, recipeId: string): Promise<number | undefined> {
@@ -127,8 +145,10 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
   const startedAt = Date.now();
   const expected = await averageDuration(context, recipe.id);
   let log = '';
+  let stage = 'Starting build';
+  let settled = false;
 
-  output.appendLine(`CodeForge Build Center`);
+  output.appendLine('CodeForge Build Center');
   output.appendLine(`Target: ${recipe.target}`);
   output.appendLine(`Recipe: ${recipe.label}`);
   output.appendLine(`Command: ${recipe.command} ${recipe.args.join(' ')}`);
@@ -151,11 +171,16 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
       const timer = setInterval(() => {
         const elapsed = Date.now() - startedAt;
         const eta = expected ? Math.max(0, expected - elapsed) : undefined;
-        progress.report({ message: eta === undefined ? `Elapsed ${formatDuration(elapsed)} · ETA learning…` : `Elapsed ${formatDuration(elapsed)} · ETA ~${formatDuration(eta)}` });
+        progress.report({
+          message: eta === undefined
+            ? `${stage} · Elapsed ${formatDuration(elapsed)} · ETA learning…`
+            : `${stage} · Elapsed ${formatDuration(elapsed)} · ETA ~${formatDuration(eta)}`
+        });
       }, 1000);
 
       token.onCancellationRequested(() => {
         if (activeBuild) {
+          stage = 'Cancelling';
           activeBuild.kill();
           output.appendLine('\nBuild cancellation requested by user.');
         }
@@ -164,13 +189,16 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
       const onData = (chunk: Buffer): void => {
         const text = chunk.toString();
         log += text;
+        stage = inferBuildStage(text, stage);
         output.append(text);
       };
 
       activeBuild.stdout.on('data', onData);
       activeBuild.stderr.on('data', onData);
 
-      activeBuild.on('error', async (error) => {
+      activeBuild.on('error', async error => {
+        if (settled) return;
+        settled = true;
         clearInterval(timer);
         const finishedAt = Date.now();
         log += `\n${error.stack ?? error.message}\n`;
@@ -181,7 +209,9 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
         resolve();
       });
 
-      activeBuild.on('close', async (code) => {
+      activeBuild.on('close', async code => {
+        if (settled) return;
+        settled = true;
         clearInterval(timer);
         const finishedAt = Date.now();
         const duration = finishedAt - startedAt;
@@ -252,8 +282,72 @@ async function openBuildCenter(context: vscode.ExtensionContext, output: vscode.
   }
 }
 
+async function showAIAnalysis(ai: AIService, result: BuildResult): Promise<void> {
+  const analysis = await vscode.window.withProgress({
+    location: vscode.ProgressLocation.Notification,
+    title: 'CodeForge AI: analyzing failed build…',
+    cancellable: false
+  }, async () => ai.analyzeBuildFailure({
+    target: result.recipe.target,
+    recipe: result.recipe.label,
+    command: result.recipe.command,
+    args: result.recipe.args,
+    exitCode: result.exitCode,
+    log: sanitizeDiagnosticText(result.log)
+  }));
+
+  const document = await vscode.workspace.openTextDocument({
+    language: 'markdown',
+    content: [
+      '# CodeForge Build Doctor',
+      '',
+      `**Provider:** ${analysis.provider}`,
+      `**Model:** ${analysis.model}`,
+      `**Target:** ${result.recipe.target}`,
+      `**Recipe:** ${result.recipe.label}`,
+      `**Exit code:** ${result.exitCode ?? 'unknown'}`,
+      '',
+      '## Diagnosis',
+      '',
+      analysis.content,
+      '',
+      '---',
+      '',
+      '> CodeForge sanitized build output before sending it to the model. Provider credentials are stored separately and are never included in the prompt.'
+    ].join('\n')
+  });
+  await vscode.window.showTextDocument(document, { preview: false });
+}
+
+async function openAIControl(ai: AIService): Promise<void> {
+  const selection = await vscode.window.showQuickPick([
+    { label: '$(plug) Test AI connection', id: 'test' },
+    { label: '$(settings-gear) Open AI settings', id: 'settings' },
+    { label: '$(key) Set/replace Bionic API key', id: 'setKey' },
+    { label: '$(trash) Clear Bionic API key', id: 'clearKey' }
+  ], { title: 'CodeForge AI', placeHolder: 'Manage Ollama / Bionic AI' });
+
+  if (!selection) return;
+  if (selection.id === 'settings') {
+    await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.ai');
+    return;
+  }
+  if (selection.id === 'setKey') {
+    const changed = await ai.setBionicApiKey();
+    if (changed) void vscode.window.showInformationMessage('CodeForge securely updated the Bionic API key.');
+    return;
+  }
+  if (selection.id === 'clearKey') {
+    await ai.clearBionicApiKey();
+    void vscode.window.showInformationMessage('CodeForge cleared the stored Bionic API key.');
+    return;
+  }
+  await vscode.commands.executeCommand('codeforge.testAIConnection');
+}
+
 export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('CodeForge Build');
+  const ai = new AIService(context);
   context.subscriptions.push(output);
 
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.openBuildCenter', async () => {
@@ -274,18 +368,45 @@ export function activate(context: vscode.ExtensionContext): void {
       return;
     }
 
-    const provider = vscode.workspace.getConfiguration('codeforge.ai').get<string>('provider', 'auto');
-    const sanitizedLog = lastBuild.log.slice(-30000);
-    const doc = await vscode.workspace.openTextDocument({
-      language: 'markdown',
-      content: `# CodeForge Build Failure Analysis\n\n**Provider:** ${provider}\n\n**Target:** ${lastBuild.recipe.target}\n\n**Recipe:** ${lastBuild.recipe.label}\n\n**Exit code:** ${lastBuild.exitCode}\n\n## Build log (sanitized context)\n\n\`\`\`text\n${sanitizedLog}\n\`\`\`\n\n> AI provider execution will consume this sanitized diagnostic context. Raw credentials and secret storage are never included.\n`
-    });
-    await vscode.window.showTextDocument(doc, { preview: false });
-    void vscode.window.showInformationMessage('CodeForge prepared the failed build context for AI analysis. Provider execution is the next integration step.');
+    try {
+      await showAIAnalysis(ai, lastBuild);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const action = await vscode.window.showErrorMessage(`CodeForge AI analysis failed: ${message}`, 'Test AI connection', 'Open AI settings');
+      if (action === 'Test AI connection') {
+        await vscode.commands.executeCommand('codeforge.testAIConnection');
+      } else if (action === 'Open AI settings') {
+        await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.ai');
+      }
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.testAIConnection', async () => {
+    try {
+      const result = await vscode.window.withProgress({
+        location: vscode.ProgressLocation.Notification,
+        title: 'CodeForge: detecting local AI…',
+        cancellable: false
+      }, async () => ai.testConnection());
+      const preview = result.models.slice(0, 5).join(', ') || 'none';
+      void vscode.window.showInformationMessage(`CodeForge connected to ${result.provider}. Selected: ${result.selectedModel}. Models: ${preview}${result.models.length > 5 ? '…' : ''}`);
+    } catch (error) {
+      void vscode.window.showErrorMessage(error instanceof Error ? error.message : String(error));
+    }
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.setBionicApiKey', async () => {
+    const changed = await ai.setBionicApiKey();
+    if (changed) void vscode.window.showInformationMessage('Bionic API key stored securely.');
+  }));
+
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.clearBionicApiKey', async () => {
+    await ai.clearBionicApiKey();
+    void vscode.window.showInformationMessage('Bionic API key cleared.');
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.openAI', async () => {
-    await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.ai');
+    await openAIControl(ai);
   }));
 
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.openMCP', async () => {
