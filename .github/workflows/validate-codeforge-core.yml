@@ -38,4 +38,6 @@ jobs:
       # same source root as the desktop build rather than producing false
       # TS6059 "not under rootDir" failures.
       - name: Type-check CodeForge workbench core
+        env:
+          NODE_OPTIONS: --max-old-space-size=6144
         run: node node_modules/typescript/bin/tsc6 --project src/tsconfig.json --noEmit --skipLibCheck
