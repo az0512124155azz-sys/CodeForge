@@ -4,6 +4,7 @@ import * as path from 'path';
 import { AIService, sanitizeDiagnosticText } from './ai';
 import { GitHubRepository, GitHubService } from './github';
 import { addMCPServer, browseMCPResources, openMCPConfiguration, openMCPControlCenter, openMCPManager, showInstalledMCPServers } from './mcp';
+import { SafetyTimeline } from './timeline';
 
 interface BuildRecipe {
   id: string;
@@ -227,7 +228,7 @@ async function handleBuildFailure(result: BuildResult): Promise<void> {
   if (action === 'Ask AI why') await vscode.commands.executeCommand('codeforge.analyzeLastBuild');
 }
 
-async function openBuildCenter(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<void> {
+async function openBuildCenter(context: vscode.ExtensionContext, output: vscode.OutputChannel, timeline: SafetyTimeline): Promise<void> {
   const root = workspaceRoot();
   if (!root) {
     void vscode.window.showWarningMessage('Open a project folder before using CodeForge Build Center.');
@@ -243,7 +244,22 @@ async function openBuildCenter(context: vscode.ExtensionContext, output: vscode.
     return { label: recipe.label, description: recipe.target, detail: avg ? `Average previous build: ${formatDuration(avg)}` : 'No timing history yet', recipe };
   }));
   const selected = await vscode.window.showQuickPick(items, { title: 'CodeForge Build Center', placeHolder: 'Choose a detected build target' });
-  if (selected) await runBuild(context, selected.recipe, output);
+  if (!selected) return;
+
+  const autoCheckpoint = vscode.workspace.getConfiguration('codeforge.timeline').get<boolean>('autoCheckpointBeforeBuild', true);
+  if (autoCheckpoint) {
+    try {
+      await timeline.createCheckpoint(`Before build: ${selected.recipe.label}`, true);
+    } catch (error) {
+      const proceed = await vscode.window.showWarningMessage(
+        `CodeForge could not create the pre-build checkpoint: ${error instanceof Error ? error.message : String(error)}`,
+        { modal: true },
+        'Build without checkpoint'
+      );
+      if (proceed !== 'Build without checkpoint') return;
+    }
+  }
+  await runBuild(context, selected.recipe, output);
 }
 
 async function showAIAnalysis(ai: AIService, result: BuildResult): Promise<void> {
@@ -377,9 +393,10 @@ export function activate(context: vscode.ExtensionContext): void {
   const output = vscode.window.createOutputChannel('CodeForge Build');
   const ai = new AIService(context);
   const github = new GitHubService(context);
+  const timeline = new SafetyTimeline(context);
   context.subscriptions.push(output);
 
-  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openBuildCenter', async () => openBuildCenter(context, output)));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openBuildCenter', async () => openBuildCenter(context, output, timeline)));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.cancelBuild', () => {
     if (!activeBuild) return void vscode.window.showInformationMessage('No CodeForge build is currently running.');
     activeBuild.kill();
@@ -434,6 +451,17 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.github.push', async () => vscode.commands.executeCommand('git.push')));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.github.pull', async () => vscode.commands.executeCommand('git.pull')));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.github.sync', async () => vscode.commands.executeCommand('git.sync')));
+
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.timeline.createCheckpoint', async () => {
+    const reason = await vscode.window.showInputBox({ title: 'CodeForge Safety Timeline', prompt: 'Checkpoint description', value: 'Manual checkpoint' });
+    if (reason) await timeline.createCheckpoint(reason);
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.timeline.show', async () => timeline.show()));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.timeline.restoreLatest', async () => timeline.restoreLatest()));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.timeline.createAIBranch', async () => {
+    const task = await vscode.window.showInputBox({ title: 'CodeForge AI Branch', prompt: 'Describe the AI task this isolated branch will contain' });
+    if (task) await timeline.createAIBranch(task);
+  }));
 
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.status', () => {
     const root = workspaceRoot();
