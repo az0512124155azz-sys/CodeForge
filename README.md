@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.19**
+**Bootstrap version: 0.0.20**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 
@@ -13,6 +13,7 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - Build Center performs real project detection and build execution for common npm, Gradle/Android, Cargo, CMake and Flutter projects.
 - Live build notifications show the current inferred stage, elapsed time and ETA based on recent build history, while raw stdout/stderr is streamed into the CodeForge Build output channel.
 - Active builds can be cancelled and completed build durations are retained locally for improved ETA estimates.
+- Build Center retains detailed per-workspace history with inferred stages, duration, exit status, redacted diagnostics, and links to fresh artifacts; retention is configurable and history can be cleared from the UI.
 - Ollama and Bionic/OpenAI-compatible AI execution is wired into CodeForge.
 - Auto AI mode tries Ollama first and falls back to Bionic/OpenAI-compatible local endpoints.
 - CodeForge enumerates provider models and can automatically prefer coding-oriented models.
@@ -38,7 +39,7 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 
 CodeForge is being developed as a daily-use desktop IDE for Windows, macOS and Linux, with additional Android build tooling. Next major work includes:
 
-- Rich Build Center UI with detailed stages, artifacts, diagnostics and persistent history.
+- Continue evolving Build Center with structured compiler problem matching and multi-stage build pipelines.
 - GitHub release publishing for successful build artifacts.
 - Expand the MCP permission broker beyond build failures so models can invoke additional narrowly authorized actions without receiving raw access tokens.
 - Session restoration and close/shutdown protection for unsaved files and running jobs.
