@@ -14,12 +14,22 @@ export interface OperationSnapshot {
   status: string;
 }
 
+let currentOperationState: OperationState | undefined;
+
+export function getCurrentOperationState(): OperationState | undefined {
+  return currentOperationState;
+}
+
 export class OperationState implements vscode.Disposable {
   private readonly active = new Map<OperationKind, OperationEntry>();
   private readonly changeEmitter = new vscode.EventEmitter<void>();
   private dashboardRegistration: vscode.Disposable | undefined;
   private dashboard: vscode.Disposable | undefined;
   readonly onDidChange = this.changeEmitter.event;
+
+  constructor() {
+    currentOperationState = this;
+  }
 
   private runningKey(kind: OperationKind): string {
     return `codeforge.${kind}Running`;
@@ -95,6 +105,7 @@ export class OperationState implements vscode.Disposable {
   }
 
   dispose(): void {
+    if (currentOperationState === this) currentOperationState = undefined;
     this.dashboardRegistration?.dispose();
     this.dashboard?.dispose();
     this.changeEmitter.dispose();
