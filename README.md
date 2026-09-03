@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.20**
+**Bootstrap version: 0.0.21**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 
@@ -34,6 +34,7 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - Safety Timeline can restore a checkpoint without moving the branch pointer, creates a safety checkpoint before restore, and can create isolated `codeforge/ai/...` branches for AI tasks.
 - Build Center can automatically create a Safety Timeline checkpoint before a build.
 - CodeForge Platform and Core validation are green in GitHub Actions after the secure MCP build-failure routing integration.
+- Windows packaging now invokes the full `vscode-win32-x64-min` build pipeline before installer generation, ensuring `out-vscode-min` exists before package checksum validation.
 
 ## Product direction
 
