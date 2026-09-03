@@ -1,0 +1,69 @@
+{
+  "name": "codeforge-platform",
+  "displayName": "CodeForge Platform",
+  "description": "Core CodeForge integration for Build Center, AI, MCP and GitHub workflows.",
+  "version": "0.0.1",
+  "publisher": "codeforge",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "main": "./out/extension",
+  "activationEvents": [
+    "onStartupFinished",
+    "onCommand:codeforge.openBuildCenter",
+    "onCommand:codeforge.openAI",
+    "onCommand:codeforge.openMCP",
+    "onCommand:codeforge.openGitHub"
+  ],
+  "scripts": {
+    "compile": "gulp compile-extension:codeforge-platform",
+    "watch": "gulp watch-extension:codeforge-platform"
+  },
+  "contributes": {
+    "commands": [
+      {
+        "command": "codeforge.openBuildCenter",
+        "title": "CodeForge: Open Build Center"
+      },
+      {
+        "command": "codeforge.openAI",
+        "title": "CodeForge: Open AI"
+      },
+      {
+        "command": "codeforge.openMCP",
+        "title": "CodeForge: Open MCP"
+      },
+      {
+        "command": "codeforge.openGitHub",
+        "title": "CodeForge: Open GitHub"
+      }
+    ],
+    "configuration": {
+      "title": "CodeForge",
+      "properties": {
+        "codeforge.ai.provider": {
+          "type": "string",
+          "enum": ["auto", "ollama", "bionic"],
+          "default": "auto",
+          "description": "AI provider used by CodeForge."
+        },
+        "codeforge.ai.ollamaEndpoint": {
+          "type": "string",
+          "default": "http://127.0.0.1:11434",
+          "description": "Local Ollama endpoint."
+        },
+        "codeforge.ai.bionicEndpoint": {
+          "type": "string",
+          "default": "http://127.0.0.1:1234/v1",
+          "description": "Bionic/OpenAI-compatible local endpoint."
+        },
+        "codeforge.build.autoAnalyzeFailures": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically send sanitized build diagnostics to the connected AI provider when a build fails."
+        }
+      }
+    }
+  }
+}
