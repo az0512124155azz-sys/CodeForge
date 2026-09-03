@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
-import { AIService, sanitizeDiagnosticText } from './ai';
+import { AIAnalysisResult, AIService, sanitizeDiagnosticText } from './ai';
 import { GitHubRepository, GitHubService } from './github';
 import { addMCPServer, browseMCPResources, MCPPermissionBroker, openMCPConfiguration, openMCPControlCenter, openMCPManager, showInstalledMCPServers } from './mcp';
 import { OperationState } from './operations';
@@ -26,6 +26,7 @@ interface BuildResult {
 
 let activeBuild: ChildProcessWithoutNullStreams | undefined;
 let lastBuild: BuildResult | undefined;
+let lastAnalysis: AIAnalysisResult | undefined;
 
 function workspaceRoot(): string | undefined {
   return vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
@@ -309,6 +310,7 @@ async function showAIAnalysis(ai: AIService, result: BuildResult, operations: Op
     exitCode: result.exitCode,
     log: sanitizeDiagnosticText(result.log)
   })));
+  lastAnalysis = analysis;
 
   const document = await vscode.workspace.openTextDocument({
     language: 'markdown',
@@ -331,6 +333,71 @@ async function showAIAnalysis(ai: AIService, result: BuildResult, operations: Op
     ].join('\n')
   });
   await vscode.window.showTextDocument(document, { preview: false });
+  if (extractUnifiedDiff(analysis.content)) {
+    const action = await vscode.window.showInformationMessage('CodeForge AI included a patch. Review it before applying.', 'Review AI patch');
+    if (action === 'Review AI patch') await vscode.commands.executeCommand('codeforge.applyLastAIFix');
+  }
+}
+
+function extractUnifiedDiff(content: string): string | undefined {
+  const fenced = /```diff\s*\r?\n([\s\S]*?)```/i.exec(content)?.[1];
+  const diff = (fenced ?? content.slice(content.indexOf('diff --git '))).trim();
+  if (!diff.startsWith('diff --git ')) return undefined;
+  if (/^(?:---|\+\+\+)\s+(?:[A-Za-z]:[\\/]|\/|(?:a\/|b\/)?\.\.\/)/m.test(diff)) return undefined;
+  if (/^GIT binary patch$/m.test(diff)) return undefined;
+  return `${diff}\n`;
+}
+
+function runProcess(command: string, args: string[], cwd: string): Promise<{ code: number | null; output: string }> {
+  return new Promise(resolve => {
+    const child = spawn(command, args, { cwd, env: process.env, shell: false, windowsHide: true });
+    let output = '';
+    child.stdout.on('data', chunk => output += chunk.toString());
+    child.stderr.on('data', chunk => output += chunk.toString());
+    child.on('error', error => resolve({ code: -1, output: error.message }));
+    child.on('close', code => resolve({ code, output }));
+  });
+}
+
+async function reviewAndApplyLastAIFix(context: vscode.ExtensionContext, timeline: SafetyTimeline, output: vscode.OutputChannel, operations: OperationState, mcp: MCPPermissionBroker): Promise<void> {
+  const root = workspaceRoot();
+  const build = lastBuild;
+  const patch = lastAnalysis && extractUnifiedDiff(lastAnalysis.content);
+  if (!root || !build || !patch) {
+    void vscode.window.showInformationMessage('There is no validated AI patch available to review.');
+    return;
+  }
+
+  const document = await vscode.workspace.openTextDocument({ language: 'diff', content: patch });
+  await vscode.window.showTextDocument(document, { preview: false });
+
+  const storage = context.storageUri ?? context.globalStorageUri;
+  await vscode.workspace.fs.createDirectory(storage);
+  const patchUri = vscode.Uri.joinPath(storage, `ai-fix-${Date.now()}.patch`);
+  await vscode.workspace.fs.writeFile(patchUri, Buffer.from(patch, 'utf8'));
+  try {
+    const checked = await runProcess('git', ['apply', '--check', '--whitespace=error-all', patchUri.fsPath], root);
+    if (checked.code !== 0) {
+      void vscode.window.showErrorMessage(`CodeForge rejected the AI patch: ${sanitizeDiagnosticText(checked.output).slice(-1000)}`);
+      return;
+    }
+
+    const approval = await vscode.window.showWarningMessage(
+      `Apply the reviewed AI patch for “${build.recipe.label}”? CodeForge will create a Safety Timeline checkpoint first.`,
+      { modal: true, detail: 'The patch passed git apply --check. It will modify working-tree files but will not stage or commit them.' },
+      'Create checkpoint and apply'
+    );
+    if (approval !== 'Create checkpoint and apply') return;
+
+    await timeline.createCheckpoint(`Before AI fix: ${build.recipe.label}`, true);
+    const applied = await runProcess('git', ['apply', '--whitespace=nowarn', patchUri.fsPath], root);
+    if (applied.code !== 0) throw new Error(`git apply failed after validation: ${sanitizeDiagnosticText(applied.output).slice(-1000)}`);
+
+    const action = await vscode.window.showInformationMessage('CodeForge applied the AI patch after creating a recoverable checkpoint.', 'Rerun build');
+    if (action === 'Rerun build') await runBuild(context, build.recipe, output, operations, mcp);
+  } finally {
+    await vscode.workspace.fs.delete(patchUri, { useTrash: false });
+  }
 }
 
 async function openAIControl(ai: AIService, operations: OperationState): Promise<void> {
@@ -513,6 +580,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
       const action = await vscode.window.showErrorMessage(`CodeForge AI analysis failed: ${message}`, 'Test AI connection', 'Open AI settings');
       if (action === 'Test AI connection') await vscode.commands.executeCommand('codeforge.testAIConnection');
       if (action === 'Open AI settings') await vscode.commands.executeCommand('workbench.action.openSettings', 'codeforge.ai');
+    }
+  }));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.applyLastAIFix', async () => {
+    try {
+      await reviewAndApplyLastAIFix(context, timeline, output, operations, mcp);
+    } catch (error) {
+      void vscode.window.showErrorMessage(`CodeForge could not apply the AI fix: ${error instanceof Error ? error.message : String(error)}`);
     }
   }));
 
