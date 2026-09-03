@@ -3,7 +3,7 @@ import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
 import { AIService, sanitizeDiagnosticText } from './ai';
 import { GitHubRepository, GitHubService } from './github';
-import { addMCPServer, browseMCPResources, openMCPConfiguration, openMCPControlCenter, openMCPManager, showInstalledMCPServers } from './mcp';
+import { addMCPServer, browseMCPResources, MCPPermissionBroker, openMCPConfiguration, openMCPControlCenter, openMCPManager, showInstalledMCPServers } from './mcp';
 import { OperationState } from './operations';
 import { SafetyTimeline } from './timeline';
 
@@ -131,7 +131,7 @@ function buildStatus(recipe: BuildRecipe, stage: string, startedAt: number, expe
     : `${recipe.label} · ${stage} · elapsed ${formatDuration(elapsed)} · ETA ~${formatDuration(eta)}`;
 }
 
-async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, output: vscode.OutputChannel, operations: OperationState): Promise<void> {
+async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, output: vscode.OutputChannel, operations: OperationState, mcp: MCPPermissionBroker): Promise<void> {
   if (activeBuild || operations.isRunning('build')) {
     void vscode.window.showWarningMessage('A CodeForge build is already running.');
     return;
@@ -223,11 +223,24 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
       if (action === 'Open Build Output') output.show(true);
     });
   } else {
-    await handleBuildFailure(result);
+    await handleBuildFailure(result, mcp);
   }
 }
 
-async function handleBuildFailure(result: BuildResult): Promise<void> {
+async function handleBuildFailure(result: BuildResult, mcp: MCPPermissionBroker): Promise<void> {
+  try {
+    const routed = await mcp.routeBuildFailure({
+      target: result.recipe.target,
+      recipe: result.recipe.label,
+      command: result.recipe.command,
+      args: result.recipe.args,
+      exitCode: result.exitCode,
+      log: result.log
+    });
+    if (routed) void vscode.window.showInformationMessage('CodeForge securely routed sanitized build diagnostics to MCP.');
+  } catch (error) {
+    void vscode.window.showWarningMessage(`CodeForge MCP routing failed: ${error instanceof Error ? error.message : String(error)}`);
+  }
   const autoAnalyze = vscode.workspace.getConfiguration('codeforge.build').get<boolean>('autoAnalyzeFailures', true);
   if (autoAnalyze) {
     await vscode.commands.executeCommand('codeforge.analyzeLastBuild');
@@ -237,7 +250,7 @@ async function handleBuildFailure(result: BuildResult): Promise<void> {
   if (action === 'Ask AI why') await vscode.commands.executeCommand('codeforge.analyzeLastBuild');
 }
 
-async function openBuildCenter(context: vscode.ExtensionContext, output: vscode.OutputChannel, timeline: SafetyTimeline, operations: OperationState): Promise<void> {
+async function openBuildCenter(context: vscode.ExtensionContext, output: vscode.OutputChannel, timeline: SafetyTimeline, operations: OperationState, mcp: MCPPermissionBroker): Promise<void> {
   const root = workspaceRoot();
   if (!root) {
     void vscode.window.showWarningMessage('Open a project folder before using CodeForge Build Center.');
@@ -279,7 +292,7 @@ async function openBuildCenter(context: vscode.ExtensionContext, output: vscode.
     }
   }
 
-  await runBuild(context, selected.recipe, output, operations);
+  await runBuild(context, selected.recipe, output, operations, mcp);
 }
 
 async function showAIAnalysis(ai: AIService, result: BuildResult, operations: OperationState): Promise<void> {
@@ -480,10 +493,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   const github = new GitHubService(context);
   const operations = new OperationState();
   const timeline = new SafetyTimeline(context);
-  context.subscriptions.push(output);
+  const mcp = new MCPPermissionBroker(context);
+  context.subscriptions.push(output, mcp);
   await operations.initialize();
 
-  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openBuildCenter', async () => openBuildCenter(context, output, timeline, operations)));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openBuildCenter', async () => openBuildCenter(context, output, timeline, operations, mcp)));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.cancelBuild', () => activeBuild?.kill()));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.cancelActiveOperations', async () => operations.cancelAll()));
 
@@ -526,7 +540,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   }));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.openAI', async () => openAIControl(ai, operations)));
 
-  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openMCP', openMCPControlCenter));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.openMCP', async () => openMCPControlCenter(mcp)));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.mcp.manage', openMCPManager));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.mcp.addServer', addMCPServer));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.mcp.installed', showInstalledMCPServers));

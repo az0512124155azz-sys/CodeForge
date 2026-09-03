@@ -10,6 +10,9 @@
     "vscode": "^1.100.0"
   },
   "main": "./out/bootstrap",
+  "enabledApiProposals": [
+    "mcpServerDefinitions"
+  ],
   "activationEvents": [
     "onStartupFinished",
     "onCommand:codeforge.openBuildCenter",
@@ -169,7 +172,13 @@
         "codeforge.mcp.autoSendBuildFailures": {
           "type": "boolean",
           "default": true,
-          "description": "When an authorized MCP AI connection is active, allow CodeForge to automatically send sanitized build failure diagnostics."
+          "description": "Offer to route sanitized build.failed diagnostics to an authorized MCP tool. Every destination requires permission and raw logs or credentials are never sent."
+        },
+        "codeforge.mcp.buildFailureToolNames": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["build.failed", "build_failed", "analyze_build_failure"],
+          "description": "MCP tool names CodeForge may offer for sanitized build failure routing."
         },
         "codeforge.timeline.maxCheckpoints": {
           "type": "number",

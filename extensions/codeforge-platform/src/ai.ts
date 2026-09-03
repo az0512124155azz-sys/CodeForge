@@ -124,13 +124,22 @@ function chooseModel(models: string[], configured: string): string {
 
 export function sanitizeDiagnosticText(input: string): string {
   let text = input;
+  text = text.replace(/-----BEGIN [^-\r\n]+ PRIVATE KEY-----[\s\S]*?-----END [^-\r\n]+ PRIVATE KEY-----/gi, '[REDACTED_PRIVATE_KEY]');
+  text = text.replace(/\bAKIA[0-9A-Z]{16}\b/g, '[REDACTED_AWS_ACCESS_KEY]');
+  text = text.replace(/\beyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\b/g, '[REDACTED_JWT]');
+  text = text.replace(/\bnpm_[A-Za-z0-9]{20,}\b/g, '[REDACTED_NPM_TOKEN]');
   text = text.replace(/\bgithub_pat_[A-Za-z0-9_]{20,}\b/g, '[REDACTED_GITHUB_TOKEN]');
   text = text.replace(/\bgh[pousr]_[A-Za-z0-9]{20,}\b/g, '[REDACTED_GITHUB_TOKEN]');
   text = text.replace(/\bsk-[A-Za-z0-9_-]{20,}\b/g, '[REDACTED_API_KEY]');
   text = text.replace(/(Authorization\s*:\s*(?:Bearer|token)\s+)[^\s]+/gi, '$1[REDACTED]');
-  text = text.replace(/([?&](?:token|key|api_key|access_token|password)=)[^&\s]+/gi, '$1[REDACTED]');
+  text = text.replace(/([?&](?:token|key|api_key|access_token|client_secret|password|signature|sig)=)[^&\s]+/gi, '$1[REDACTED]');
   text = text.replace(/(https?:\/\/[^:\s/@]+):([^@\s/]+)@/gi, '$1:[REDACTED]@');
-  text = text.replace(/\b((?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_?KEY)\s*[=:]\s*)[^\s'"`]+/gi, '$1[REDACTED]');
+  text = text.replace(/(["'](?:api[_-]?key|token|secret|password|private[_-]?key)["']\s*:\s*["'])[^"'\r\n]+(["'])/gi, '$1[REDACTED]$2');
+  text = text.replace(/\b((?:API_?KEY|TOKEN|SECRET|PASSWORD|PASSWD|PRIVATE_?KEY)\s*[=:]\s*)(?:["'][^"'\r\n]*["']|[^\s'"`]+)/gi, '$1[REDACTED]');
+  text = text.replace(/\b[A-Fa-f0-9]{32,}\b/g, '[REDACTED_HIGH_ENTROPY_VALUE]');
+  text = text.replace(/\b[A-Za-z0-9_+/=-]{48,}\b/g, '[REDACTED_HIGH_ENTROPY_VALUE]');
+  text = text.replace(/\b[A-Za-z]:\\Users\\[^\\\s]+/gi, '[HOME]');
+  text = text.replace(/\/home\/[^/\s]+/g, '[HOME]');
   return text.slice(-40000);
 }
 
