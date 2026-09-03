@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.14**
+**Bootstrap version: 0.0.15**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 
@@ -25,7 +25,7 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - GitHub OAuth scopes are configurable so users can reduce account access when their workflow permits it.
 - CodeForge MCP controls use the full MCP implementation already present in the Code-OSS workbench: server management, add server, installed servers, resources, configuration and trust controls.
 - CodeForge platform TypeScript configuration uses the same VS Code and Node type environment used by Code-OSS extensions.
-- A GitHub Actions validation workflow type-checks the CodeForge platform extension and validates its manifest.
+- A GitHub Actions validation workflow type-checks the CodeForge platform extension and validates its manifest. The first validation exposed an incorrect extension type environment and that CI configuration has been corrected.
 
 ## Product direction
 
