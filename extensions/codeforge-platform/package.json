@@ -2,7 +2,7 @@
   "name": "codeforge-platform",
   "displayName": "CodeForge Platform",
   "description": "Core CodeForge integration for Build Center, AI, MCP and GitHub workflows.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "codeforge",
   "license": "MIT",
   "engines": {
@@ -19,7 +19,18 @@
     "onCommand:codeforge.clearBionicApiKey",
     "onCommand:codeforge.openAI",
     "onCommand:codeforge.openMCP",
-    "onCommand:codeforge.openGitHub"
+    "onCommand:codeforge.mcp.manage",
+    "onCommand:codeforge.mcp.addServer",
+    "onCommand:codeforge.mcp.installed",
+    "onCommand:codeforge.mcp.resources",
+    "onCommand:codeforge.mcp.openConfig",
+    "onCommand:codeforge.openGitHub",
+    "onCommand:codeforge.github.signIn",
+    "onCommand:codeforge.github.createRepository",
+    "onCommand:codeforge.github.readFile",
+    "onCommand:codeforge.github.push",
+    "onCommand:codeforge.github.pull",
+    "onCommand:codeforge.github.sync"
   ],
   "scripts": {
     "compile": "gulp compile-extension:codeforge-platform",
@@ -27,42 +38,26 @@
   },
   "contributes": {
     "commands": [
-      {
-        "command": "codeforge.openBuildCenter",
-        "title": "CodeForge: Open Build Center"
-      },
-      {
-        "command": "codeforge.cancelBuild",
-        "title": "CodeForge: Cancel Active Build"
-      },
-      {
-        "command": "codeforge.analyzeLastBuild",
-        "title": "CodeForge: Ask AI Why Last Build Failed"
-      },
-      {
-        "command": "codeforge.testAIConnection",
-        "title": "CodeForge: Test AI Connection"
-      },
-      {
-        "command": "codeforge.setBionicApiKey",
-        "title": "CodeForge: Set Bionic API Key Securely"
-      },
-      {
-        "command": "codeforge.clearBionicApiKey",
-        "title": "CodeForge: Clear Bionic API Key"
-      },
-      {
-        "command": "codeforge.openAI",
-        "title": "CodeForge: Open AI"
-      },
-      {
-        "command": "codeforge.openMCP",
-        "title": "CodeForge: Open MCP Settings"
-      },
-      {
-        "command": "codeforge.openGitHub",
-        "title": "CodeForge: Open GitHub Settings"
-      }
+      { "command": "codeforge.openBuildCenter", "title": "CodeForge: Open Build Center" },
+      { "command": "codeforge.cancelBuild", "title": "CodeForge: Cancel Active Build" },
+      { "command": "codeforge.analyzeLastBuild", "title": "CodeForge: Ask AI Why Last Build Failed" },
+      { "command": "codeforge.testAIConnection", "title": "CodeForge: Test AI Connection" },
+      { "command": "codeforge.setBionicApiKey", "title": "CodeForge: Set Bionic API Key Securely" },
+      { "command": "codeforge.clearBionicApiKey", "title": "CodeForge: Clear Bionic API Key" },
+      { "command": "codeforge.openAI", "title": "CodeForge: Open AI" },
+      { "command": "codeforge.openMCP", "title": "CodeForge: Open MCP" },
+      { "command": "codeforge.mcp.manage", "title": "CodeForge: Manage MCP Servers" },
+      { "command": "codeforge.mcp.addServer", "title": "CodeForge: Add MCP Server" },
+      { "command": "codeforge.mcp.installed", "title": "CodeForge: Show Installed MCP Servers" },
+      { "command": "codeforge.mcp.resources", "title": "CodeForge: Browse MCP Resources" },
+      { "command": "codeforge.mcp.openConfig", "title": "CodeForge: Open MCP Configuration" },
+      { "command": "codeforge.openGitHub", "title": "CodeForge: Open GitHub" },
+      { "command": "codeforge.github.signIn", "title": "CodeForge: Sign In with GitHub" },
+      { "command": "codeforge.github.createRepository", "title": "CodeForge: Create GitHub Repository" },
+      { "command": "codeforge.github.readFile", "title": "CodeForge: Read File from GitHub" },
+      { "command": "codeforge.github.push", "title": "CodeForge: Push to GitHub" },
+      { "command": "codeforge.github.pull", "title": "CodeForge: Pull from GitHub" },
+      { "command": "codeforge.github.sync", "title": "CodeForge: Sync GitHub Repository" }
     ],
     "configuration": {
       "title": "CodeForge",
@@ -103,12 +98,18 @@
         "codeforge.github.clientId": {
           "type": "string",
           "default": "",
-          "description": "Public GitHub App/OAuth Client ID used by CodeForge sign-in. Secrets are stored separately and are never exposed to AI models."
+          "description": "Public GitHub OAuth Client ID used by the CodeForge desktop PKCE sign-in flow. No client secret is stored in the app."
         },
         "codeforge.github.callbackUrl": {
           "type": "string",
           "default": "http://127.0.0.1/github/callback",
-          "description": "GitHub sign-in callback URL for the CodeForge desktop application."
+          "description": "Registered loopback callback base URL. CodeForge dynamically adds an available local port during sign-in."
+        },
+        "codeforge.github.scopes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "default": ["repo", "read:user"],
+          "description": "GitHub OAuth scopes requested by CodeForge. Reduce these to limit account access when your workflow allows it."
         },
         "codeforge.mcp.autoSendBuildFailures": {
           "type": "boolean",
