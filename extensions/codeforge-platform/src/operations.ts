@@ -2,9 +2,11 @@ import * as vscode from 'vscode';
 
 export type OperationKind = 'build' | 'ai' | 'git';
 
+type CancelOperation = () => unknown | Promise<unknown>;
+
 interface OperationEntry {
   status: string;
-  cancel?: () => void | Promise<void>;
+  cancel?: CancelOperation;
 }
 
 export interface OperationSnapshot {
@@ -43,7 +45,7 @@ export class OperationState implements vscode.Disposable {
     this.changeEmitter.fire();
   }
 
-  async begin(kind: OperationKind, status: string, cancel?: () => void | Promise<void>): Promise<void> {
+  async begin(kind: OperationKind, status: string, cancel?: CancelOperation): Promise<void> {
     this.active.set(kind, { status, cancel });
     await this.publish(kind, true, status);
   }
@@ -83,7 +85,7 @@ export class OperationState implements vscode.Disposable {
     await Promise.all(entries.map(([kind]) => this.end(kind)));
   }
 
-  async run<T>(kind: OperationKind, status: string, task: () => Promise<T>, cancel?: () => void | Promise<void>): Promise<T> {
+  async run<T>(kind: OperationKind, status: string, task: () => Promise<T>, cancel?: CancelOperation): Promise<T> {
     await this.begin(kind, status, cancel);
     try {
       return await task();
