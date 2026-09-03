@@ -8,7 +8,7 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 
 - Code - OSS source is promoted directly to `main`.
 - CodeForge product branding is applied in `product.json`.
-- The approved transparent CodeForge symbol is now stored as a reusable repository branding asset for the IDE and future platform icon generation.
+- The approved transparent CodeForge symbol is stored as a reusable repository branding asset and registered as the CodeForge platform extension icon.
 - Built-in `codeforge-platform` extension is included as the integration layer for CodeForge-specific features.
 - Build Center performs real project detection and build execution for common npm, Gradle/Android, Cargo, CMake and Flutter projects.
 - Live build notifications show the current inferred stage, elapsed time and ETA based on recent build history, while raw stdout/stderr is streamed into the CodeForge Build output channel.
@@ -24,7 +24,7 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - GitHub controls include sign-in/out, account status, repository listing, repository creation, clone, push, pull, sync and reading a file directly from a repository through the GitHub API.
 - GitHub OAuth scopes are configurable so users can reduce account access when their workflow permits it.
 - CodeForge MCP controls use the full MCP implementation already present in the Code-OSS workbench: server management, add server, installed servers, resources, configuration and trust controls.
-- CodeForge platform TypeScript configuration now uses the same VS Code and Node type environment used by Code-OSS extensions.
+- CodeForge platform TypeScript configuration uses the same VS Code and Node type environment used by Code-OSS extensions.
 - A GitHub Actions validation workflow type-checks the CodeForge platform extension and validates its manifest.
 
 ## Product direction
