@@ -2,6 +2,8 @@ import * as vscode from 'vscode';
 import * as http from 'http';
 import * as https from 'https';
 import { createHash, randomBytes } from 'crypto';
+import { createReadStream, promises as fs } from 'fs';
+import * as path from 'path';
 
 interface StoredGitHubToken {
   accessToken: string;
@@ -39,6 +41,21 @@ export interface GitHubRepository {
   clone_url: string;
   default_branch: string;
   description?: string | null;
+}
+
+export interface GitHubRelease {
+  id: number;
+  tag_name: string;
+  name?: string | null;
+  html_url: string;
+  upload_url: string;
+}
+
+export interface GitHubReleaseAsset {
+  id: number;
+  name: string;
+  size: number;
+  browser_download_url: string;
 }
 
 interface GitHubContentResponse {
@@ -96,6 +113,28 @@ function parseJson<T>(raw: string, context: string): T {
     return JSON.parse(raw) as T;
   } catch (error) {
     throw new Error(`${context} returned invalid JSON: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+function repositoryParts(repository: string): { owner: string; name: string } {
+  const [owner, name] = repository.split('/');
+  if (!owner || !name) throw new Error('Repository must be in owner/name format.');
+  return { owner, name };
+}
+
+function contentTypeForFile(fileName: string): string {
+  const extension = path.extname(fileName).toLowerCase();
+  switch (extension) {
+    case '.zip': return 'application/zip';
+    case '.gz': return 'application/gzip';
+    case '.deb': return 'application/vnd.debian.binary-package';
+    case '.rpm': return 'application/x-rpm';
+    case '.apk': return 'application/vnd.android.package-archive';
+    case '.aab': return 'application/octet-stream';
+    case '.msi': return 'application/x-msi';
+    case '.dmg': return 'application/x-apple-diskimage';
+    case '.pkg': return 'application/octet-stream';
+    default: return 'application/octet-stream';
   }
 }
 
@@ -369,8 +408,7 @@ export class GitHubService {
   }
 
   async readRepositoryFile(repository: string, filePath: string, ref?: string): Promise<{ name: string; path: string; text: string; htmlUrl?: string }> {
-    const [owner, name] = repository.split('/');
-    if (!owner || !name) throw new Error('Repository must be in owner/name format.');
+    const { owner, name } = repositoryParts(repository);
     const encodedPath = filePath.split('/').map(segment => encodeURIComponent(segment)).join('/');
     const query = ref ? `?ref=${encodeURIComponent(ref)}` : '';
     const response = await this.apiRequest<GitHubContentResponse>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/contents/${encodedPath}${query}`, { interactive: true });
@@ -381,5 +419,88 @@ export class GitHubService {
       ? Buffer.from(response.content.replace(/\n/g, ''), 'base64').toString('utf8')
       : response.content;
     return { name: response.name, path: response.path, text, htmlUrl: response.html_url };
+  }
+
+  async getReleaseByTag(repository: string, tag: string): Promise<GitHubRelease | undefined> {
+    const { owner, name } = repositoryParts(repository);
+    try {
+      return await this.apiRequest<GitHubRelease>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/releases/tags/${encodeURIComponent(tag)}`, { interactive: true });
+    } catch (error) {
+      if (error instanceof Error && error.message.includes('GitHub API 404:')) return undefined;
+      throw error;
+    }
+  }
+
+  async createOrGetRelease(repository: string, tag: string, releaseName: string, targetCommitish?: string): Promise<GitHubRelease> {
+    const existing = await this.getReleaseByTag(repository, tag);
+    if (existing) return existing;
+    const { owner, name } = repositoryParts(repository);
+    return this.apiRequest<GitHubRelease>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/releases`, {
+      method: 'POST',
+      interactive: true,
+      body: {
+        tag_name: tag,
+        target_commitish: targetCommitish || undefined,
+        name: releaseName,
+        draft: false,
+        prerelease: false,
+        generate_release_notes: true
+      }
+    });
+  }
+
+  async uploadReleaseAsset(repository: string, releaseId: number, filePath: string, assetName?: string): Promise<GitHubReleaseAsset> {
+    const token = await this.accessToken(true);
+    if (!token) throw new Error('CodeForge is not signed in to GitHub.');
+    const { owner, name } = repositoryParts(repository);
+    const stat = await fs.stat(filePath);
+    if (!stat.isFile()) throw new Error(`Release asset is not a file: ${filePath}`);
+    if (stat.size > 2 * 1024 * 1024 * 1024) throw new Error(`GitHub Release assets must be 2 GB or smaller: ${path.basename(filePath)}`);
+
+    const fileName = assetName || path.basename(filePath);
+    const uploadUrl = new URL(`https://uploads.github.com/repos/${encodeURIComponent(owner)}/${encodeURIComponent(name)}/releases/${releaseId}/assets`);
+    uploadUrl.searchParams.set('name', fileName);
+
+    return new Promise<GitHubReleaseAsset>((resolve, reject) => {
+      const request = https.request({
+        protocol: uploadUrl.protocol,
+        hostname: uploadUrl.hostname,
+        path: `${uploadUrl.pathname}${uploadUrl.search}`,
+        method: 'POST',
+        headers: {
+          Accept: 'application/vnd.github+json',
+          Authorization: `Bearer ${token}`,
+          'X-GitHub-Api-Version': '2022-11-28',
+          'User-Agent': 'CodeForge-IDE',
+          'Content-Type': contentTypeForFile(fileName),
+          'Content-Length': String(stat.size)
+        }
+      }, response => {
+        const chunks: Buffer[] = [];
+        response.on('data', chunk => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+        response.on('end', () => {
+          const raw = Buffer.concat(chunks).toString('utf8');
+          const status = response.statusCode ?? 0;
+          if (status < 200 || status >= 300) {
+            let detail = raw.slice(0, 600);
+            try {
+              const parsed = JSON.parse(raw) as { message?: string };
+              detail = parsed.message ?? detail;
+            } catch {
+              // Keep raw detail.
+            }
+            reject(new Error(`GitHub asset upload failed with HTTP ${status}: ${detail}`));
+            return;
+          }
+          resolve(parseJson<GitHubReleaseAsset>(raw, 'GitHub release asset upload'));
+        });
+      });
+
+      request.setTimeout(30 * 60 * 1000, () => request.destroy(new Error(`GitHub upload timed out: ${fileName}`)));
+      request.on('error', reject);
+      const stream = createReadStream(filePath);
+      stream.on('error', error => request.destroy(error));
+      stream.pipe(request);
+    });
   }
 }
