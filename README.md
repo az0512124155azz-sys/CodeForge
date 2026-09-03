@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.18**
+**Bootstrap version: 0.0.19**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 
@@ -17,6 +17,8 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - Auto AI mode tries Ollama first and falls back to Bionic/OpenAI-compatible local endpoints.
 - CodeForge enumerates provider models and can automatically prefer coding-oriented models.
 - Failed builds can automatically invoke CodeForge Build Doctor and open the AI diagnosis directly in the editor.
+- Build Doctor can return a unified patch that CodeForge validates with `git apply --check`, opens for review, and applies only after explicit approval and a recoverable Safety Timeline checkpoint.
+- After an approved AI patch is applied, CodeForge can rerun the exact failed build recipe; AI changes are left unstaged and uncommitted for user review.
 - Build logs are sanitized before AI analysis; GitHub tokens, API keys, Authorization headers, URL credentials and common secret environment values are redacted.
 - Optional Bionic API keys are stored in SecretStorage and are never placed in settings, Git, build logs or model prompts.
 - GitHub desktop sign-in uses a native OAuth authorization-code + PKCE implementation with a dynamic 127.0.0.1 loopback listener and strict OAuth state validation.
