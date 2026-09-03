@@ -1,9 +1,20 @@
 {
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
-    "outDir": "./out"
+    "rootDir": "./src",
+    "outDir": "./out",
+    "types": [
+      "node"
+    ],
+    "typeRoots": [
+      "../../node_modules/@types"
+    ],
+    "lib": [
+      "ES2024"
+    ]
   },
   "include": [
-    "src/**/*.ts"
+    "src/**/*.ts",
+    "../../src/vscode-dts/vscode.d.ts"
   ]
 }
