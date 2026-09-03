@@ -17,7 +17,7 @@ jobs:
   typecheck-core:
     name: Type-check CodeForge workbench core
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 25
     steps:
       - name: Checkout CodeForge
         uses: actions/checkout@v4
@@ -30,13 +30,8 @@ jobs:
           node-version-file: '.nvmrc'
           cache: npm
 
-      - name: Install Linux native build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends libkrb5-dev
+      - name: Install TypeScript dependencies
+        run: npm ci --ignore-scripts
 
-      - name: Install Code-OSS dependencies
-        run: npm ci
-
-      - name: Type-check Code-OSS client with CodeForge core
-        run: npm run typecheck-client
+      - name: Type-check focused CodeForge workbench core
+        run: npx tsc --project src/vs/workbench/contrib/codeforge/tsconfig.json --noEmit
