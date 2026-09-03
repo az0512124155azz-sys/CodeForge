@@ -2,6 +2,11 @@ name: Package CodeForge Windows
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/package-codeforge-windows.yml'
 
 permissions:
   contents: read
