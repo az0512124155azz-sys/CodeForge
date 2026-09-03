@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.16**
+**Bootstrap version: 0.0.17**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 
@@ -20,6 +20,7 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - Build logs are sanitized before AI analysis; GitHub tokens, API keys, Authorization headers, URL credentials and common secret environment values are redacted.
 - Optional Bionic API keys are stored in SecretStorage and are never placed in settings, Git, build logs or model prompts.
 - GitHub desktop sign-in uses a native OAuth authorization-code + PKCE implementation with a dynamic 127.0.0.1 loopback listener and strict OAuth state validation.
+- The public GitHub OAuth Client ID is now configured in CodeForge; no GitHub client secret is embedded in the application or repository.
 - GitHub access and refresh tokens are stored only in SecretStorage. CodeForge does not require a client secret in the desktop app.
 - GitHub controls include sign-in/out, account status, repository listing, repository creation, clone, push, pull, sync and reading a file directly from a repository through the GitHub API.
 - GitHub OAuth scopes are configurable so users can reduce account access when their workflow permits it.
