@@ -152,7 +152,12 @@ export class GitHubService {
   }
 
   private scopes(): string[] {
-    return this.configuration().get<string[]>('scopes', ['repo', 'read:user']);
+    const configured = this.configuration().get<string[]>('scopes', ['repo', 'read:user']);
+    const scopes = [...new Set(configured.map(scope => scope.trim()).filter(Boolean))];
+    if (!scopes.every(scope => /^[A-Za-z0-9:_-]+$/.test(scope))) {
+      throw new Error('CodeForge GitHub scopes contain an invalid value. Use GitHub OAuth scope names only.');
+    }
+    return scopes;
   }
 
   private callbackBase(): URL {
@@ -161,6 +166,9 @@ export class GitHubService {
     const loopback = url.hostname === '127.0.0.1' || url.hostname === '[::1]' || url.hostname === '::1';
     if (url.protocol !== 'http:' || !loopback) {
       throw new Error('CodeForge GitHub callback must be an HTTP loopback URL using 127.0.0.1 or ::1.');
+    }
+    if (url.username || url.password || url.search || url.hash || !url.pathname.startsWith('/')) {
+      throw new Error('CodeForge GitHub callback must not contain credentials, query parameters, or a fragment.');
     }
     return url;
   }
@@ -267,6 +275,7 @@ export class GitHubService {
     const authorizationCode = await new Promise<{ code: string; redirectUri: string }>((resolve, reject) => {
       let settled = false;
       let timeout: NodeJS.Timeout | undefined;
+      let redirectUri: string | undefined;
       const finish = (callback: () => void): void => {
         if (settled) return;
         settled = true;
@@ -276,6 +285,15 @@ export class GitHubService {
       };
 
       const server = http.createServer((request, response) => {
+        response.setHeader('Cache-Control', 'no-store');
+        response.setHeader('X-Content-Type-Options', 'nosniff');
+        response.setHeader('Referrer-Policy', 'no-referrer');
+        if (request.method !== 'GET') {
+          response.statusCode = 405;
+          response.setHeader('Allow', 'GET');
+          response.end('Method not allowed');
+          return;
+        }
         const requestUrl = new URL(request.url ?? '/', 'http://127.0.0.1');
         if (requestUrl.pathname !== callback.pathname) {
           response.statusCode = 404;
@@ -300,7 +318,7 @@ export class GitHubService {
           finish(() => reject(new Error(description ?? error)));
           return;
         }
-        if (!code) {
+        if (!code || code.length > 512) {
           response.statusCode = 400;
           response.end('Missing authorization code.');
           finish(() => reject(new Error('GitHub callback did not include an authorization code.')));
@@ -318,7 +336,14 @@ export class GitHubService {
         response.statusCode = 200;
         response.setHeader('Content-Type', 'text/html; charset=utf-8');
         response.end('<!doctype html><html><body style="font-family:system-ui;background:#111;color:#eee;padding:40px"><h2>CodeForge connected to GitHub</h2><p>You can close this browser tab and return to CodeForge.</p></body></html>');
-        finish(() => resolve({ code, redirectUri: `http://127.0.0.1:${address.port}${callback.pathname}` }));
+        if (!redirectUri) {
+          response.statusCode = 500;
+          response.end('CodeForge could not determine the callback URL.');
+          finish(() => reject(new Error('CodeForge could not determine the loopback callback URL.')));
+          return;
+        }
+        const callbackRedirectUri = redirectUri;
+        finish(() => resolve({ code, redirectUri: callbackRedirectUri }));
       });
 
       server.on('error', error => finish(() => reject(error)));
@@ -329,7 +354,7 @@ export class GitHubService {
           finish(() => reject(new Error('CodeForge could not open the GitHub callback listener.')));
           return;
         }
-        const redirectUri = `http://127.0.0.1:${address.port}${callback.pathname}`;
+        redirectUri = `http://127.0.0.1:${address.port}${callback.pathname}`;
         const authorize = new URL('https://github.com/login/oauth/authorize');
         authorize.searchParams.set('client_id', clientId);
         authorize.searchParams.set('redirect_uri', redirectUri);
