@@ -1,0 +1,37 @@
+name: Validate CodeForge Core
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'src/vs/workbench/contrib/codeforge/**'
+      - 'src/vs/workbench/browser/workbench.zenMode.contribution.ts'
+      - '.github/workflows/validate-codeforge-core.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  typecheck-core:
+    name: Type-check CodeForge workbench core
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout CodeForge
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - name: Install repository dependencies without postinstall downloads
+        run: npm ci --ignore-scripts
+
+      - name: Type-check Code-OSS client with CodeForge core
+        run: npm run typecheck-client
