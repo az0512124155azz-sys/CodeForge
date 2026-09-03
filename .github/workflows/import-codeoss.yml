@@ -1,0 +1,58 @@
+name: Import Code-OSS foundation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  import-codeoss:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CodeForge bootstrap branch
+        uses: actions/checkout@v4
+        with:
+          ref: bootstrap/codeoss-core
+          fetch-depth: 0
+
+      - name: Preserve CodeForge overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/codeforge-overlay/.github/workflows
+          cp -a .codeforge /tmp/codeforge-overlay/ 2>/dev/null || true
+          cp .github/workflows/import-codeoss.yml /tmp/codeforge-overlay/.github/workflows/import-codeoss.yml
+
+      - name: Import upstream Code-OSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          git remote remove upstream 2>/dev/null || true
+          git remote add upstream https://github.com/microsoft/vscode.git
+          git fetch upstream main --depth=1
+          git checkout -B bootstrap/codeoss-core FETCH_HEAD
+
+      - name: Restore CodeForge overlay
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p .github/workflows
+          cp -a /tmp/codeforge-overlay/.codeforge ./.codeforge
+          cp /tmp/codeforge-overlay/.github/workflows/import-codeoss.yml .github/workflows/import-codeoss.yml
+
+      - name: Apply initial CodeForge product branding
+        shell: bash
+        run: |
+          set -euo pipefail
+          node .codeforge/scripts/apply-branding.mjs
+
+      - name: Commit imported foundation
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Bootstrap CodeForge from Code-OSS" || true
+          git push origin bootstrap/codeoss-core --force-with-lease
