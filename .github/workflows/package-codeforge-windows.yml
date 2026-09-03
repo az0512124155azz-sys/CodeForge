@@ -9,7 +9,9 @@ permissions:
 jobs:
   package-windows-x64:
     name: Build and install-test Windows x64
-    runs-on: windows-latest
+    # VS Code's native dependency gate currently requires the VS 2022 toolchain.
+    # Pin the image so a windows-latest migration cannot silently select VS 2026.
+    runs-on: windows-2022
     timeout-minutes: 120
     env:
       npm_config_arch: x64
