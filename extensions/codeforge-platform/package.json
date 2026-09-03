@@ -2,7 +2,7 @@
   "name": "codeforge-platform",
   "displayName": "CodeForge Platform",
   "description": "Core CodeForge integration for Build Center, AI, MCP and GitHub workflows.",
-  "version": "0.0.1",
+  "version": "0.1.0",
   "publisher": "codeforge",
   "license": "MIT",
   "engines": {
@@ -12,6 +12,8 @@
   "activationEvents": [
     "onStartupFinished",
     "onCommand:codeforge.openBuildCenter",
+    "onCommand:codeforge.cancelBuild",
+    "onCommand:codeforge.analyzeLastBuild",
     "onCommand:codeforge.openAI",
     "onCommand:codeforge.openMCP",
     "onCommand:codeforge.openGitHub"
@@ -27,16 +29,24 @@
         "title": "CodeForge: Open Build Center"
       },
       {
+        "command": "codeforge.cancelBuild",
+        "title": "CodeForge: Cancel Active Build"
+      },
+      {
+        "command": "codeforge.analyzeLastBuild",
+        "title": "CodeForge: Analyze Last Failed Build"
+      },
+      {
         "command": "codeforge.openAI",
-        "title": "CodeForge: Open AI"
+        "title": "CodeForge: Open AI Settings"
       },
       {
         "command": "codeforge.openMCP",
-        "title": "CodeForge: Open MCP"
+        "title": "CodeForge: Open MCP Settings"
       },
       {
         "command": "codeforge.openGitHub",
-        "title": "CodeForge: Open GitHub"
+        "title": "CodeForge: Open GitHub Settings"
       }
     ],
     "configuration": {
@@ -58,10 +68,30 @@
           "default": "http://127.0.0.1:1234/v1",
           "description": "Bionic/OpenAI-compatible local endpoint."
         },
+        "codeforge.ai.model": {
+          "type": "string",
+          "default": "auto",
+          "description": "Preferred coding model. Use auto to let CodeForge select an available model."
+        },
         "codeforge.build.autoAnalyzeFailures": {
           "type": "boolean",
           "default": true,
-          "description": "Automatically send sanitized build diagnostics to the connected AI provider when a build fails."
+          "description": "Automatically prepare sanitized build diagnostics for the connected AI provider when a build fails."
+        },
+        "codeforge.github.clientId": {
+          "type": "string",
+          "default": "",
+          "description": "Public GitHub App/OAuth Client ID used by CodeForge sign-in. Secrets are stored separately and are never exposed to AI models."
+        },
+        "codeforge.github.callbackUrl": {
+          "type": "string",
+          "default": "http://127.0.0.1/github/callback",
+          "description": "GitHub sign-in callback URL for the CodeForge desktop application."
+        },
+        "codeforge.mcp.autoSendBuildFailures": {
+          "type": "boolean",
+          "default": true,
+          "description": "When an authorized MCP AI connection is active, allow CodeForge to automatically send sanitized build failure diagnostics."
         }
       }
     }
