@@ -6,6 +6,12 @@ on:
 permissions:
   contents: write
 
+env:
+  # Code-OSS contains large LFS-backed test fixtures (for example Copilot
+  # simulation caches). They are not required to bootstrap or build the IDE,
+  # and fetching them makes the import depend on upstream LFS objects.
+  GIT_LFS_SKIP_SMUDGE: "1"
+
 jobs:
   import-codeoss:
     runs-on: ubuntu-latest
@@ -15,6 +21,15 @@ jobs:
         with:
           ref: bootstrap/codeoss-core
           fetch-depth: 0
+          lfs: false
+
+      - name: Disable Git LFS smudge for bootstrap
+        shell: bash
+        run: |
+          set -euo pipefail
+          git lfs install --local --skip-smudge || true
+          git config --local filter.lfs.smudge "git-lfs smudge --skip -- %f"
+          git config --local filter.lfs.process "git-lfs filter-process --skip"
 
       - name: Preserve CodeForge overlay
         shell: bash
@@ -26,12 +41,14 @@ jobs:
 
       - name: Import upstream Code-OSS
         shell: bash
+        env:
+          GIT_LFS_SKIP_SMUDGE: "1"
         run: |
           set -euo pipefail
           git remote remove upstream 2>/dev/null || true
           git remote add upstream https://github.com/microsoft/vscode.git
           git fetch upstream main --depth=1
-          git checkout -B bootstrap/codeoss-core FETCH_HEAD
+          git -c filter.lfs.smudge= -c filter.lfs.required=false checkout -B bootstrap/codeoss-core FETCH_HEAD
 
       - name: Restore CodeForge overlay
         shell: bash
