@@ -68,8 +68,20 @@ jobs:
         shell: pwsh
         run: |
           $app = Resolve-Path '..\VSCode-win32-x64\CodeForge.exe'
-          & $app --version
-          if ($LASTEXITCODE -ne 0) { throw 'Packaged CodeForge failed its version smoke test.' }
+          if ((Get-Item -LiteralPath $app).Length -lt 1MB) { throw "Packaged CodeForge.exe is unexpectedly small: $app" }
+
+          # On Windows the supported version entry point is the generated CLI launcher.
+          # It runs CodeForge.exe with ELECTRON_RUN_AS_NODE and out/cli.js. Calling the
+          # Electron GUI executable directly with --version starts the desktop workbench
+          # instead of the CLI and can return an unrelated runtime exit code.
+          $cli = Resolve-Path '..\VSCode-win32-x64\bin\codeforge.cmd'
+          $expectedVersion = (Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).version
+          $versionOutput = @(& $cli --version)
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged CodeForge CLI failed its version smoke test.' }
+          if ($versionOutput.Count -lt 1 -or $versionOutput[0].Trim() -ne $expectedVersion) {
+            throw "Packaged CodeForge CLI reported an unexpected version. Expected '$expectedVersion', got '$($versionOutput -join ' | ')'."
+          }
+
           $systemSetup = Resolve-Path '.build\win32-x64\system-setup\VSCodeSetup.exe'
           $userSetup = Resolve-Path '.build\win32-x64\user-setup\VSCodeSetup.exe'
           foreach ($setup in @($systemSetup, $userSetup)) {
@@ -83,10 +95,20 @@ jobs:
           $installDir = Join-Path $env:RUNNER_TEMP 'CodeForge-install-test'
           $process = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir" -Wait -PassThru -WindowStyle Hidden
           if ($process.ExitCode -ne 0) { throw "Installer exited with $($process.ExitCode)." }
+
           $installedApp = Join-Path $installDir 'CodeForge.exe'
           if (-not (Test-Path -LiteralPath $installedApp)) { throw 'Installed CodeForge.exe was not found.' }
-          & $installedApp --version
-          if ($LASTEXITCODE -ne 0) { throw 'Installed CodeForge failed its version smoke test.' }
+          if ((Get-Item -LiteralPath $installedApp).Length -lt 1MB) { throw "Installed CodeForge.exe is unexpectedly small: $installedApp" }
+
+          $installedCli = Join-Path $installDir 'bin\codeforge.cmd'
+          if (-not (Test-Path -LiteralPath $installedCli)) { throw 'Installed CodeForge CLI launcher was not found.' }
+          $expectedVersion = (Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).version
+          $versionOutput = @(& $installedCli --version)
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CodeForge CLI failed its version smoke test.' }
+          if ($versionOutput.Count -lt 1 -or $versionOutput[0].Trim() -ne $expectedVersion) {
+            throw "Installed CodeForge CLI reported an unexpected version. Expected '$expectedVersion', got '$($versionOutput -join ' | ')'."
+          }
+
           $uninstaller = Join-Path $installDir 'unins000.exe'
           if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'CodeForge uninstaller was not found.' }
           $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru -WindowStyle Hidden
