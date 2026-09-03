@@ -7,8 +7,15 @@ interface OperationEntry {
   cancel?: () => void | Promise<void>;
 }
 
-export class OperationState {
+export interface OperationSnapshot {
+  running: boolean;
+  status: string;
+}
+
+export class OperationState implements vscode.Disposable {
   private readonly active = new Map<OperationKind, OperationEntry>();
+  private readonly changeEmitter = new vscode.EventEmitter<void>();
+  readonly onDidChange = this.changeEmitter.event;
 
   private runningKey(kind: OperationKind): string {
     return `codeforge.${kind}Running`;
@@ -27,6 +34,7 @@ export class OperationState {
       vscode.commands.executeCommand('setContext', this.runningKey(kind), running),
       vscode.commands.executeCommand('setContext', this.statusKey(kind), running ? status : '')
     ]);
+    this.changeEmitter.fire();
   }
 
   async begin(kind: OperationKind, status: string, cancel?: () => void | Promise<void>): Promise<void> {
@@ -39,6 +47,7 @@ export class OperationState {
     if (!current) return;
     current.status = status;
     void vscode.commands.executeCommand('setContext', this.statusKey(kind), status);
+    this.changeEmitter.fire();
   }
 
   async end(kind: OperationKind): Promise<void> {
@@ -48,6 +57,11 @@ export class OperationState {
 
   isRunning(kind: OperationKind): boolean {
     return this.active.has(kind);
+  }
+
+  snapshot(kind: OperationKind): OperationSnapshot {
+    const current = this.active.get(kind);
+    return current ? { running: true, status: current.status } : { running: false, status: '' };
   }
 
   async cancelAll(): Promise<void> {
@@ -70,5 +84,9 @@ export class OperationState {
     } finally {
       await this.end(kind);
     }
+  }
+
+  dispose(): void {
+    this.changeEmitter.dispose();
   }
 }
