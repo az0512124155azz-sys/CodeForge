@@ -2,7 +2,7 @@
   "name": "codeforge-platform",
   "displayName": "CodeForge Platform",
   "description": "Core CodeForge integration for Build Center, AI, MCP, GitHub and Safety Timeline workflows.",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "publisher": "codeforge",
   "license": "MIT",
   "icon": "media/codeforge.png",
@@ -14,6 +14,7 @@
     "onStartupFinished",
     "onCommand:codeforge.openBuildCenter",
     "onCommand:codeforge.cancelBuild",
+    "onCommand:codeforge.cancelActiveOperations",
     "onCommand:codeforge.analyzeLastBuild",
     "onCommand:codeforge.testAIConnection",
     "onCommand:codeforge.setBionicApiKey",
@@ -45,6 +46,7 @@
     "commands": [
       { "command": "codeforge.openBuildCenter", "title": "CodeForge: Open Build Center" },
       { "command": "codeforge.cancelBuild", "title": "CodeForge: Cancel Active Build" },
+      { "command": "codeforge.cancelActiveOperations", "title": "CodeForge: Cancel Active Operations" },
       { "command": "codeforge.analyzeLastBuild", "title": "CodeForge: Ask AI Why Last Build Failed" },
       { "command": "codeforge.testAIConnection", "title": "CodeForge: Test AI Connection" },
       { "command": "codeforge.setBionicApiKey", "title": "CodeForge: Set Bionic API Key Securely" },
@@ -136,6 +138,11 @@
           "type": "boolean",
           "default": true,
           "description": "Create a non-destructive Safety Timeline Git checkpoint before starting a detected build."
+        },
+        "codeforge.shutdown.confirmActiveOperations": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prevent window/app shutdown while CodeForge Build, AI or Git operations are active and ask whether to wait or cancel them."
         }
       }
     }
