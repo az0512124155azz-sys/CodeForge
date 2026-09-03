@@ -14,6 +14,7 @@ import { KeybindingsRegistry, KeybindingWeight } from '../../platform/keybinding
 import { Registry } from '../../platform/registry/common/platform.js';
 import { InEditorZenModeContext, IsAuxiliaryWindowFocusedContext } from '../common/contextkeys.js';
 import { IWorkbenchLayoutService } from '../services/layout/browser/layoutService.js';
+import '../contrib/codeforge/browser/codeforge.contribution.js';
 import { ZenHideEditorTabsAction, ZenShowMultipleEditorTabsAction, ZenShowSingleEditorTabAction } from './actions/layoutActions.js';
 
 // --- Configuration
