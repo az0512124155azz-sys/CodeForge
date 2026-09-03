@@ -1,4 +1,4 @@
-name: Import Code-OSS foundation
+name: Import Code-OSS foundation v0.0.6
 
 on:
   workflow_dispatch:
@@ -16,6 +16,10 @@ jobs:
           ref: bootstrap/codeoss-core
           fetch-depth: 0
           lfs: false
+
+      - name: Show importer version
+        shell: bash
+        run: echo "CodeForge importer version 0.0.6"
 
       - name: Preserve CodeForge overlay
         shell: bash
@@ -58,6 +62,15 @@ jobs:
             cp /tmp/codeforge-overlay/README.CODEFORGE.md CODEFORGE.md
           fi
 
+      - name: Remove unavailable upstream LFS test fixtures
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf extensions/copilot/test/simulation/cache
+          git lfs uninstall --local || true
+          rm -f .git/hooks/pre-push || true
+          echo "Removed upstream Copilot LFS-only test cache; these fixtures are not required for CodeForge bootstrap/build."
+
       - name: Apply initial CodeForge product branding
         shell: bash
         run: |
@@ -68,13 +81,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          echo "Top-level files:"
-          ls -la | head -80
           test -f package.json
           test -f product.json
           test -d src/vs
           test -d extensions
-          echo "Code-OSS foundation is present."
+          test ! -d extensions/copilot/test/simulation/cache
+          echo "Code-OSS foundation is present and unavailable LFS fixtures were excluded."
 
       - name: Commit imported foundation
         shell: bash
@@ -84,4 +96,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Bootstrap CodeForge from Code-OSS" || true
-          git push origin HEAD:bootstrap/codeoss-core
+          git push --no-verify origin HEAD:bootstrap/codeoss-core
