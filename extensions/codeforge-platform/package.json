@@ -2,9 +2,10 @@
   "name": "codeforge-platform",
   "displayName": "CodeForge Platform",
   "description": "Core CodeForge integration for Build Center, AI, MCP and GitHub workflows.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "codeforge",
   "license": "MIT",
+  "icon": "media/codeforge.png",
   "engines": {
     "vscode": "^1.100.0"
   },
