@@ -54,7 +54,7 @@ export class CodeForgeDashboard implements vscode.TreeDataProvider<DashboardItem
   private operationItem(kind: OperationKind, running: boolean, status: string): DashboardItem {
     if (kind === 'build') {
       return running
-        ? new DashboardItem('Build running', compactStatus(status), new vscode.ThemeIcon('loading~spin'), 'codeforge.openBuildOutput', status)
+        ? new DashboardItem('Build running', compactStatus(status), new vscode.ThemeIcon('loading~spin'), 'workbench.action.output.toggleOutput', status)
         : new DashboardItem('Build Center', 'ready', new vscode.ThemeIcon('tools'), 'codeforge.openBuildCenter', 'Detect and build Windows, Linux, macOS and Android projects');
     }
     if (kind === 'ai') {
