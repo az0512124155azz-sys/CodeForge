@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.8**
+**Bootstrap version: 0.0.9**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 
@@ -11,6 +11,7 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - Built-in `codeforge-platform` extension added as the integration layer for CodeForge-specific features.
 - Initial commands and settings added for Build Center, AI, MCP, and GitHub.
 - AI provider settings currently include Auto, Ollama, and Bionic/OpenAI-compatible endpoints.
+- Pull-request flow corrected so CodeForge feature work targets the imported Code-OSS foundation branch before promotion to `main`.
 
 ## Product direction
 
@@ -27,7 +28,7 @@ CodeForge is being developed as a daily-use desktop IDE for Windows, macOS, and 
 
 ## Repository policy
 
-`main` remains the stable branch. CodeForge implementation work is developed on feature branches and merged only after validation.
+`main` remains the stable branch. The imported Code-OSS foundation lives on `bootstrap/codeoss-core`. CodeForge implementation work is developed on feature branches based on that foundation, reviewed into `bootstrap/codeoss-core`, and promoted to `main` only after validation.
 
 Current implementation branch: `feature/codeforge-platform-v4`.
 
