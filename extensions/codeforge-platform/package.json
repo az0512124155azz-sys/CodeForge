@@ -1,8 +1,8 @@
 {
   "name": "codeforge-platform",
   "displayName": "CodeForge Platform",
-  "description": "Core CodeForge integration for Build Center, AI, MCP and GitHub workflows.",
-  "version": "0.3.1",
+  "description": "Core CodeForge integration for Build Center, AI, MCP, GitHub and Safety Timeline workflows.",
+  "version": "0.4.0",
   "publisher": "codeforge",
   "license": "MIT",
   "icon": "media/codeforge.png",
@@ -31,7 +31,11 @@
     "onCommand:codeforge.github.readFile",
     "onCommand:codeforge.github.push",
     "onCommand:codeforge.github.pull",
-    "onCommand:codeforge.github.sync"
+    "onCommand:codeforge.github.sync",
+    "onCommand:codeforge.timeline.createCheckpoint",
+    "onCommand:codeforge.timeline.show",
+    "onCommand:codeforge.timeline.restoreLatest",
+    "onCommand:codeforge.timeline.createAIBranch"
   ],
   "scripts": {
     "compile": "gulp compile-extension:codeforge-platform",
@@ -58,7 +62,11 @@
       { "command": "codeforge.github.readFile", "title": "CodeForge: Read File from GitHub" },
       { "command": "codeforge.github.push", "title": "CodeForge: Push to GitHub" },
       { "command": "codeforge.github.pull", "title": "CodeForge: Pull from GitHub" },
-      { "command": "codeforge.github.sync", "title": "CodeForge: Sync GitHub Repository" }
+      { "command": "codeforge.github.sync", "title": "CodeForge: Sync GitHub Repository" },
+      { "command": "codeforge.timeline.createCheckpoint", "title": "CodeForge: Create Safety Checkpoint" },
+      { "command": "codeforge.timeline.show", "title": "CodeForge: Open Safety Timeline" },
+      { "command": "codeforge.timeline.restoreLatest", "title": "CodeForge: Restore Latest Safety Checkpoint" },
+      { "command": "codeforge.timeline.createAIBranch", "title": "CodeForge: Create Isolated AI Branch" }
     ],
     "configuration": {
       "title": "CodeForge",
@@ -116,6 +124,18 @@
           "type": "boolean",
           "default": true,
           "description": "When an authorized MCP AI connection is active, allow CodeForge to automatically send sanitized build failure diagnostics."
+        },
+        "codeforge.timeline.maxCheckpoints": {
+          "type": "number",
+          "default": 50,
+          "minimum": 5,
+          "maximum": 250,
+          "description": "Maximum number of local CodeForge Git checkpoint refs retained for a repository."
+        },
+        "codeforge.timeline.autoCheckpointBeforeBuild": {
+          "type": "boolean",
+          "default": true,
+          "description": "Create a non-destructive Safety Timeline Git checkpoint before starting a detected build."
         }
       }
     }
