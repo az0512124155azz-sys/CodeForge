@@ -6,12 +6,6 @@ on:
 permissions:
   contents: write
 
-env:
-  # Code-OSS contains large LFS-backed test fixtures (for example Copilot
-  # simulation caches). They are not required to bootstrap or build the IDE,
-  # and fetching them makes the import depend on upstream LFS objects.
-  GIT_LFS_SKIP_SMUDGE: "1"
-
 jobs:
   import-codeoss:
     runs-on: ubuntu-latest
@@ -23,46 +17,64 @@ jobs:
           fetch-depth: 0
           lfs: false
 
-      - name: Disable Git LFS smudge for bootstrap
-        shell: bash
-        run: |
-          set -euo pipefail
-          git lfs install --local --skip-smudge || true
-          git config --local filter.lfs.smudge "git-lfs smudge --skip -- %f"
-          git config --local filter.lfs.process "git-lfs filter-process --skip"
-
       - name: Preserve CodeForge overlay
         shell: bash
         run: |
           set -euo pipefail
+          rm -rf /tmp/codeforge-overlay /tmp/vscode-main /tmp/vscode.tar.gz
           mkdir -p /tmp/codeforge-overlay/.github/workflows
           cp -a .codeforge /tmp/codeforge-overlay/ 2>/dev/null || true
           cp .github/workflows/import-codeoss.yml /tmp/codeforge-overlay/.github/workflows/import-codeoss.yml
+          cp README.md /tmp/codeforge-overlay/README.CODEFORGE.md 2>/dev/null || true
 
-      - name: Import upstream Code-OSS
+      - name: Download Code-OSS source archive
         shell: bash
-        env:
-          GIT_LFS_SKIP_SMUDGE: "1"
         run: |
           set -euo pipefail
-          git remote remove upstream 2>/dev/null || true
-          git remote add upstream https://github.com/microsoft/vscode.git
-          git fetch upstream main --depth=1
-          git -c filter.lfs.smudge= -c filter.lfs.required=false checkout -B bootstrap/codeoss-core FETCH_HEAD
+          curl -fL --retry 5 --retry-delay 2 \
+            https://codeload.github.com/microsoft/vscode/tar.gz/refs/heads/main \
+            -o /tmp/vscode.tar.gz
+          mkdir -p /tmp/vscode-main
+          tar -xzf /tmp/vscode.tar.gz -C /tmp/vscode-main --strip-components=1
+          test -f /tmp/vscode-main/package.json
+          test -d /tmp/vscode-main/src
+
+      - name: Replace working tree with Code-OSS
+        shell: bash
+        run: |
+          set -euo pipefail
+          find . -mindepth 1 -maxdepth 1 ! -name .git -exec rm -rf {} +
+          cp -a /tmp/vscode-main/. .
 
       - name: Restore CodeForge overlay
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p .github/workflows
+          rm -rf .codeforge
           cp -a /tmp/codeforge-overlay/.codeforge ./.codeforge
+          mkdir -p .github/workflows
           cp /tmp/codeforge-overlay/.github/workflows/import-codeoss.yml .github/workflows/import-codeoss.yml
+          if [ -f /tmp/codeforge-overlay/README.CODEFORGE.md ]; then
+            cp /tmp/codeforge-overlay/README.CODEFORGE.md CODEFORGE.md
+          fi
 
       - name: Apply initial CodeForge product branding
         shell: bash
         run: |
           set -euo pipefail
           node .codeforge/scripts/apply-branding.mjs
+
+      - name: Verify imported foundation
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Top-level files:"
+          ls -la | head -80
+          test -f package.json
+          test -f product.json
+          test -d src/vs
+          test -d extensions
+          echo "Code-OSS foundation is present."
 
       - name: Commit imported foundation
         shell: bash
@@ -72,4 +84,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -m "Bootstrap CodeForge from Code-OSS" || true
-          git push origin bootstrap/codeoss-core --force-with-lease
+          git push origin HEAD:bootstrap/codeoss-core
