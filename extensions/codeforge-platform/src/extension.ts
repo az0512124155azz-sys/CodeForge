@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { spawn, ChildProcessWithoutNullStreams } from 'child_process';
 import * as path from 'path';
 import { AIAnalysisResult, AIService, sanitizeDiagnosticText } from './ai';
+import { BuildArtifact, findFreshBuildArtifacts, formatArtifactSize } from './artifacts';
 import { GitHubRepository, GitHubService } from './github';
 import { addMCPServer, browseMCPResources, MCPPermissionBroker, openMCPConfiguration, openMCPControlCenter, openMCPManager, showInstalledMCPServers } from './mcp';
 import { OperationState } from './operations';
@@ -22,7 +23,22 @@ interface BuildResult {
   finishedAt: number;
   exitCode: number | null;
   log: string;
+  stages: string[];
+  artifacts: BuildArtifact[];
 }
+
+interface BuildHistoryEntry {
+  id: string;
+  recipe: Pick<BuildRecipe, 'id' | 'label' | 'target' | 'command' | 'args'>;
+  startedAt: number;
+  finishedAt: number;
+  exitCode: number | null;
+  stages: string[];
+  diagnostics: string[];
+  artifacts: BuildArtifact[];
+}
+
+const BUILD_HISTORY_KEY = 'codeforge.build.detailedHistory';
 
 let activeBuild: ChildProcessWithoutNullStreams | undefined;
 let lastBuild: BuildResult | undefined;
@@ -124,6 +140,92 @@ async function rememberDuration(context: vscode.ExtensionContext, recipeId: stri
   await context.globalState.update(`codeforge.build.history.${recipeId}`, [...values, duration].slice(-10));
 }
 
+function extractDiagnostics(log: string): string[] {
+  const diagnostic = /(?:\berror\b|\bwarning\b|\bfatal\b|\bfailed\b|\bexception\b|\bundefined reference\b)/i;
+  return [...new Set(sanitizeDiagnosticText(log).split(/\r?\n/).map(line => line.trim()).filter(line => line && diagnostic.test(line)))].slice(-60);
+}
+
+function buildHistory(context: vscode.ExtensionContext): BuildHistoryEntry[] {
+  return context.workspaceState.get<BuildHistoryEntry[]>(BUILD_HISTORY_KEY, []);
+}
+
+async function rememberBuild(context: vscode.ExtensionContext, result: BuildResult): Promise<void> {
+  const limit = Math.max(5, Math.min(250, vscode.workspace.getConfiguration('codeforge.build').get<number>('historyLimit', 50)));
+  const entry: BuildHistoryEntry = {
+    id: `${result.startedAt}-${result.recipe.id}`,
+    recipe: {
+      id: result.recipe.id,
+      label: result.recipe.label,
+      target: result.recipe.target,
+      command: result.recipe.command,
+      args: result.recipe.args
+    },
+    startedAt: result.startedAt,
+    finishedAt: result.finishedAt,
+    exitCode: result.exitCode,
+    stages: result.stages,
+    diagnostics: extractDiagnostics(result.log),
+    artifacts: result.artifacts
+  };
+  await context.workspaceState.update(BUILD_HISTORY_KEY, [entry, ...buildHistory(context)].slice(0, limit));
+}
+
+async function showBuildHistory(context: vscode.ExtensionContext): Promise<void> {
+  const history = buildHistory(context);
+  if (!history.length) {
+    void vscode.window.showInformationMessage('CodeForge Build Center has no history for this workspace yet.');
+    return;
+  }
+  const selected = await vscode.window.showQuickPick(history.map(entry => ({
+    label: `${entry.exitCode === 0 ? '$(pass-filled)' : '$(error)'} ${entry.recipe.label}`,
+    description: `${entry.recipe.target} · ${formatDuration(entry.finishedAt - entry.startedAt)}`,
+    detail: `${new Date(entry.startedAt).toLocaleString()} · ${entry.artifacts.length} artifact${entry.artifacts.length === 1 ? '' : 's'} · ${entry.diagnostics.length} diagnostic${entry.diagnostics.length === 1 ? '' : 's'}`,
+    entry
+  })), { title: 'CodeForge Build History', placeHolder: 'Select a build to inspect', matchOnDescription: true, matchOnDetail: true });
+  if (!selected) return;
+
+  const entry = selected.entry;
+  const artifactLines = entry.artifacts.length
+    ? entry.artifacts.map(artifact => `- [${artifact.relativePath}](${vscode.Uri.file(artifact.filePath).toString()}) — ${artifact.kind}, ${formatArtifactSize(artifact.size)}`)
+    : ['- No fresh installer or application artifacts detected.'];
+  const diagnosticLines = entry.diagnostics.length
+    ? entry.diagnostics.map(line => `- \`${line.replace(/`/g, '\\`')}\``)
+    : ['- No warning or error diagnostics captured.'];
+  const document = await vscode.workspace.openTextDocument({
+    language: 'markdown',
+    content: [
+      `# ${entry.exitCode === 0 ? 'Successful build' : 'Failed build'} · ${entry.recipe.label}`,
+      '',
+      `- **Target:** ${entry.recipe.target}`,
+      `- **Started:** ${new Date(entry.startedAt).toLocaleString()}`,
+      `- **Duration:** ${formatDuration(entry.finishedAt - entry.startedAt)}`,
+      `- **Exit code:** ${entry.exitCode ?? 'unknown'}`,
+      `- **Command:** \`${sanitizeDiagnosticText([entry.recipe.command, ...entry.recipe.args].join(' ')).replace(/`/g, '\\`')}\``,
+      '',
+      '## Stages',
+      '',
+      ...(entry.stages.length ? entry.stages.map(stage => `- ${stage}`) : ['- No stages inferred.']),
+      '',
+      '## Artifacts',
+      '',
+      ...artifactLines,
+      '',
+      '## Diagnostics',
+      '',
+      ...diagnosticLines,
+      '',
+      '> Build Center stores only redacted diagnostic lines, not the raw build log. Full output remains in the current CodeForge Build output channel.'
+    ].join('\n')
+  });
+  await vscode.window.showTextDocument(document, { preview: false });
+}
+
+async function clearBuildHistory(context: vscode.ExtensionContext): Promise<void> {
+  if (!buildHistory(context).length) return;
+  const confirmation = await vscode.window.showWarningMessage('Clear detailed CodeForge build history for this workspace?', { modal: true }, 'Clear history');
+  if (confirmation === 'Clear history') await context.workspaceState.update(BUILD_HISTORY_KEY, undefined);
+}
+
 function buildStatus(recipe: BuildRecipe, stage: string, startedAt: number, expected?: number): string {
   const elapsed = Date.now() - startedAt;
   const eta = expected === undefined ? undefined : Math.max(0, expected - elapsed);
@@ -144,6 +246,7 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
   const expected = await averageDuration(context, recipe.id);
   let log = '';
   let stage = 'Starting build';
+  const stages = [stage];
 
   output.appendLine('CodeForge Build Center');
   output.appendLine(`Target: ${recipe.target}`);
@@ -166,7 +269,7 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
         settled = true;
         clearInterval(timer);
         activeBuild = undefined;
-        resolve({ recipe, startedAt, finishedAt: Date.now(), exitCode, log });
+        resolve({ recipe, startedAt, finishedAt: Date.now(), exitCode, log, stages, artifacts: [] });
       };
 
       activeBuild = spawn(recipe.command, recipe.args, {
@@ -194,6 +297,7 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
         const text = chunk.toString();
         log += text;
         stage = inferBuildStage(text, stage);
+        if (stages[stages.length - 1] !== stage) stages.push(stage);
         operations.update('build', buildStatus(recipe, stage, startedAt, expected));
         output.append(text);
       };
@@ -214,6 +318,14 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
   lastBuild = result;
   const duration = result.finishedAt - result.startedAt;
   await rememberDuration(context, recipe.id, duration);
+  if (result.exitCode === 0) {
+    try {
+      result.artifacts = await findFreshBuildArtifacts(recipe.cwd, result.startedAt);
+    } catch {
+      result.artifacts = [];
+    }
+  }
+  await rememberBuild(context, result);
   output.appendLine('');
   output.appendLine(result.exitCode === 0
     ? `BUILD SUCCESSFUL · ${formatDuration(duration)}`
@@ -259,6 +371,15 @@ async function openBuildCenter(context: vscode.ExtensionContext, output: vscode.
   }
 
   const recipes = await detectBuildRecipes(root);
+  const retainedBuilds = buildHistory(context).length;
+  const action = await vscode.window.showQuickPick([
+    { label: '$(play) Run detected build', id: 'run', description: `${recipes.length} target${recipes.length === 1 ? '' : 's'} available` },
+    { label: '$(history) View build history', id: 'history', description: `${retainedBuilds} retained build${retainedBuilds === 1 ? '' : 's'}` },
+    { label: '$(clear-all) Clear build history', id: 'clear', description: retainedBuilds ? 'Remove retained diagnostics and artifact records' : 'History is empty' }
+  ], { title: 'CodeForge Build Center', placeHolder: 'Build, inspect diagnostics, and open artifacts' });
+  if (!action) return;
+  if (action.id === 'history') return showBuildHistory(context);
+  if (action.id === 'clear') return clearBuildHistory(context);
   if (!recipes.length) {
     void vscode.window.showWarningMessage('CodeForge did not detect a supported build system in this workspace.');
     return;
@@ -565,6 +686,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<void> 
   await operations.initialize();
 
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.openBuildCenter', async () => openBuildCenter(context, output, timeline, operations, mcp)));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.build.showHistory', async () => showBuildHistory(context)));
+  context.subscriptions.push(vscode.commands.registerCommand('codeforge.build.clearHistory', async () => clearBuildHistory(context)));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.cancelBuild', () => activeBuild?.kill()));
   context.subscriptions.push(vscode.commands.registerCommand('codeforge.cancelActiveOperations', async () => operations.cancelAll()));
 

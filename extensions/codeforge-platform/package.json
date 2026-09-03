@@ -16,6 +16,8 @@
   "activationEvents": [
     "onStartupFinished",
     "onCommand:codeforge.openBuildCenter",
+    "onCommand:codeforge.build.showHistory",
+    "onCommand:codeforge.build.clearHistory",
     "onCommand:codeforge.cancelBuild",
     "onCommand:codeforge.cancelActiveOperations",
     "onCommand:codeforge.publishRecentBuild",
@@ -67,6 +69,8 @@
     },
     "commands": [
       { "command": "codeforge.openBuildCenter", "title": "CodeForge: Open Build Center" },
+      { "command": "codeforge.build.showHistory", "title": "CodeForge: Show Build History" },
+      { "command": "codeforge.build.clearHistory", "title": "CodeForge: Clear Build History" },
       { "command": "codeforge.cancelBuild", "title": "CodeForge: Cancel Active Build" },
       { "command": "codeforge.cancelActiveOperations", "title": "CodeForge: Cancel Active Operations" },
       { "command": "codeforge.publishRecentBuild", "title": "CodeForge: Publish Recent Build to GitHub Release" },
@@ -149,6 +153,13 @@
           "minimum": 1,
           "maximum": 1440,
           "description": "Time window used by the manual Publish Recent Build command when an exact build start time is not available."
+        },
+        "codeforge.build.historyLimit": {
+          "type": "number",
+          "default": 50,
+          "minimum": 5,
+          "maximum": 250,
+          "description": "Maximum number of detailed Build Center history entries retained for this workspace."
         },
         "codeforge.github.clientId": {
           "type": "string",
