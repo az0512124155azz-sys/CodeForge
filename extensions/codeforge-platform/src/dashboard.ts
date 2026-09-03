@@ -43,6 +43,7 @@ export class CodeForgeDashboard implements vscode.TreeDataProvider<DashboardItem
 
     return [
       this.operationItem('build', build.running, build.status),
+      new DashboardItem('Publish Build', 'GitHub Release assets', new vscode.ThemeIcon('cloud-upload'), 'codeforge.publishRecentBuild', 'Upload fresh EXE/MSI/ZIP/AppImage/DEB/RPM/DMG/PKG/APK/AAB files as GitHub Release assets'),
       this.operationItem('ai', ai.running, ai.status),
       this.operationItem('git', git.running, git.status),
       new DashboardItem('MCP', 'servers · tools · resources', new vscode.ThemeIcon('server-process'), 'codeforge.openMCP', 'Manage CodeForge MCP connections and trust'),
