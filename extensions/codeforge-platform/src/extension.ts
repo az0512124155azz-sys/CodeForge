@@ -189,7 +189,7 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
         output.appendLine(`\nFailed to start build: ${error.message}`);
         lastBuild = { recipe, startedAt, finishedAt, exitCode: -1, log };
         activeBuild = undefined;
-        await handleBuildFailure(context, lastBuild);
+        await handleBuildFailure(lastBuild);
         resolve();
       });
 
@@ -209,7 +209,7 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
             if (action === 'Open Build Output') output.show(true);
           });
         } else {
-          await handleBuildFailure(context, lastBuild);
+          await handleBuildFailure(lastBuild);
         }
         resolve();
       });
@@ -217,7 +217,7 @@ async function runBuild(context: vscode.ExtensionContext, recipe: BuildRecipe, o
   });
 }
 
-async function handleBuildFailure(context: vscode.ExtensionContext, result: BuildResult): Promise<void> {
+async function handleBuildFailure(result: BuildResult): Promise<void> {
   const autoAnalyze = vscode.workspace.getConfiguration('codeforge.build').get<boolean>('autoAnalyzeFailures', true);
   if (autoAnalyze) {
     await vscode.commands.executeCommand('codeforge.analyzeLastBuild');
