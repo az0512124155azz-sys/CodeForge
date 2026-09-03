@@ -1,0 +1,94 @@
+name: Package CodeForge Windows
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package-windows-x64:
+    name: Build and install-test Windows x64
+    runs-on: windows-latest
+    timeout-minutes: 120
+    env:
+      npm_config_arch: x64
+      npm_config_foreground_scripts: 'true'
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
+      GITHUB_TOKEN: ${{ github.token }}
+    steps:
+      - name: Checkout CodeForge
+        uses: actions/checkout@v4
+        with:
+          lfs: false
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: npm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build dependencies
+        run: npm ci
+
+      - name: Build CodeForge desktop
+        shell: pwsh
+        run: |
+          $sdk = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64'
+          if (Test-Path -LiteralPath $sdk) { $env:PATH = "$sdk;$env:PATH" }
+          npm run gulp vscode-win32-x64-min-ci
+          if ($LASTEXITCODE -ne 0) { throw 'CodeForge desktop build failed.' }
+          npm run gulp vscode-win32-x64-inno-updater
+          if ($LASTEXITCODE -ne 0) { throw 'CodeForge updater build failed.' }
+
+      - name: Build unsigned system and user installers
+        shell: pwsh
+        run: |
+          npm run gulp vscode-win32-x64-system-setup
+          if ($LASTEXITCODE -ne 0) { throw 'System installer build failed.' }
+          npm run gulp vscode-win32-x64-user-setup
+          if ($LASTEXITCODE -ne 0) { throw 'User installer build failed.' }
+
+      - name: Verify packaged application and installers
+        shell: pwsh
+        run: |
+          $app = Resolve-Path '..\VSCode-win32-x64\CodeForge.exe'
+          & $app --version
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged CodeForge failed its version smoke test.' }
+          $systemSetup = Resolve-Path '.build\win32-x64\system-setup\VSCodeSetup.exe'
+          $userSetup = Resolve-Path '.build\win32-x64\user-setup\VSCodeSetup.exe'
+          foreach ($setup in @($systemSetup, $userSetup)) {
+            if ((Get-Item -LiteralPath $setup).Length -lt 1MB) { throw "Installer is unexpectedly small: $setup" }
+          }
+
+      - name: Install, launch, and uninstall system package
+        shell: pwsh
+        run: |
+          $setup = Resolve-Path '.build\win32-x64\system-setup\VSCodeSetup.exe'
+          $installDir = Join-Path $env:RUNNER_TEMP 'CodeForge-install-test'
+          $process = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir" -Wait -PassThru -WindowStyle Hidden
+          if ($process.ExitCode -ne 0) { throw "Installer exited with $($process.ExitCode)." }
+          $installedApp = Join-Path $installDir 'CodeForge.exe'
+          if (-not (Test-Path -LiteralPath $installedApp)) { throw 'Installed CodeForge.exe was not found.' }
+          & $installedApp --version
+          if ($LASTEXITCODE -ne 0) { throw 'Installed CodeForge failed its version smoke test.' }
+          $uninstaller = Join-Path $installDir 'unins000.exe'
+          if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'CodeForge uninstaller was not found.' }
+          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru -WindowStyle Hidden
+          if ($uninstall.ExitCode -ne 0) { throw "Uninstaller exited with $($uninstall.ExitCode)." }
+
+      - name: Upload verified unsigned installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: codeforge-windows-x64-unsigned
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            .build/win32-x64/system-setup/VSCodeSetup.exe
+            .build/win32-x64/user-setup/VSCodeSetup.exe
