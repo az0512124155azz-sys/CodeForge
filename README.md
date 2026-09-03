@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.10**
+**Bootstrap version: 0.0.11**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 
@@ -9,16 +9,20 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - Code - OSS source is now promoted directly to `main`.
 - CodeForge product branding is applied in `product.json`.
 - Built-in `codeforge-platform` extension is included as the integration layer for CodeForge-specific features.
-- Initial commands and settings are present for Build Center, AI, MCP, and GitHub.
-- AI provider settings include Auto, Ollama, and Bionic/OpenAI-compatible endpoints.
+- Build Center now performs real project detection and build execution instead of showing a placeholder message.
+- Build Center currently detects common npm, Gradle/Android, Cargo, CMake and Flutter projects.
+- Live build notifications show elapsed time and ETA based on recent build history, while raw stdout/stderr is streamed into the CodeForge Build output channel.
+- Active builds can be cancelled and completed build durations are retained locally for improved ETA estimates.
+- Failed builds produce a sanitized diagnostic context that is ready for AI provider execution; raw credentials are never included.
+- AI provider settings include Auto, Ollama and Bionic/OpenAI-compatible endpoints plus a model selector.
+- GitHub Client ID/callback and MCP automatic build-failure settings are now part of CodeForge configuration.
 
 ## Product direction
 
 CodeForge is being developed as a daily-use desktop IDE for Windows, macOS, and Linux, with additional Android build tooling. Planned first-class features include:
 
-- Build Center with live stages, elapsed time, ETA, logs, diagnostics and history.
-- AI-assisted build failure analysis and isolated AI fix branches inside the product workflow.
-- Ollama and Bionic local AI support.
+- Rich Build Center UI with detailed build stages, artifacts, diagnostics and history.
+- Actual AI provider execution for Ollama/Bionic and automatic build failure analysis.
 - MCP client, permission broker, tools/resources/prompts and event integration.
 - GitHub sign-in, repository browsing, create/clone/pull/push, branches, PRs and release publishing.
 - Safety Timeline and Git-backed recovery checkpoints.
