@@ -147,7 +147,7 @@
         },
         "codeforge.github.clientId": {
           "type": "string",
-          "default": "",
+          "default": "Ov23lif1eCdSX5HMnoqU",
           "description": "Public GitHub OAuth Client ID used by the CodeForge desktop PKCE sign-in flow. No client secret is stored in the app."
         },
         "codeforge.github.callbackUrl": {
