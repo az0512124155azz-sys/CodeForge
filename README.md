@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.24**
+**Bootstrap version: 0.0.25**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 

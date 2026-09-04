@@ -91,7 +91,7 @@ jobs:
               [int]$TimeoutSeconds = 240
             )
 
-            Write-Host "Starting $Label: $FilePath $($ArgumentList -join ' ')"
+            Write-Host "Starting ${Label}: $FilePath $($ArgumentList -join ' ')"
             $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -PassThru -WindowStyle Hidden
             if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
               Write-Host "$Label exceeded ${TimeoutSeconds}s; terminating process tree."
