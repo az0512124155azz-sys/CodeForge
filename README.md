@@ -1,6 +1,6 @@
 # CodeForge
 
-**Bootstrap version: 0.0.23**
+**Bootstrap version: 0.0.24**
 
 CodeForge is a professional desktop IDE built on the open-source Code - OSS foundation.
 
@@ -36,6 +36,7 @@ CodeForge is a professional desktop IDE built on the open-source Code - OSS foun
 - CodeForge Platform and Core validation are green in GitHub Actions after the secure MCP build-failure routing integration.
 - Windows packaging now invokes the full `vscode-win32-x64-min` build pipeline before installer generation, ensuring `out-vscode-min` exists before package checksum validation.
 - Windows package verification now uses the generated `bin\codeforge.cmd` CLI launcher for version smoke tests instead of launching the Electron GUI executable with `--version`, and validates the reported version against `package.json`.
+- Windows CI now install-tests the per-user installer with explicit install/uninstall timeouts and process cleanup, while still building and validating both system and user installers. This prevents a non-interactive runner from hanging indefinitely on machine-wide installer behavior.
 - The Windows packaging workflow automatically runs when its workflow definition changes, while remaining manually dispatchable for normal rebuilds.
 
 ## Product direction

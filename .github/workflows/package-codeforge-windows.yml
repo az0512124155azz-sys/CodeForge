@@ -14,8 +14,6 @@ permissions:
 jobs:
   package-windows-x64:
     name: Build and install-test Windows x64
-    # VS Code's native dependency gate currently requires the VS 2022 toolchain.
-    # Pin the image so a windows-latest migration cannot silently select VS 2026.
     runs-on: windows-2022
     timeout-minutes: 120
     env:
@@ -49,8 +47,6 @@ jobs:
         run: |
           $sdk = 'C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64'
           if (Test-Path -LiteralPath $sdk) { $env:PATH = "$sdk;$env:PATH" }
-          # Use the full target, not the -ci packaging-only target. The CI task assumes
-          # out-vscode-min already exists and otherwise fails while checksumming preload.js.
           npm run gulp vscode-win32-x64-min
           if ($LASTEXITCODE -ne 0) { throw 'CodeForge desktop build failed.' }
           npm run gulp vscode-win32-x64-inno-updater
@@ -70,10 +66,6 @@ jobs:
           $app = Resolve-Path '..\VSCode-win32-x64\CodeForge.exe'
           if ((Get-Item -LiteralPath $app).Length -lt 1MB) { throw "Packaged CodeForge.exe is unexpectedly small: $app" }
 
-          # On Windows the supported version entry point is the generated CLI launcher.
-          # It runs CodeForge.exe with ELECTRON_RUN_AS_NODE and out/cli.js. Calling the
-          # Electron GUI executable directly with --version starts the desktop workbench
-          # instead of the CLI and can return an unrelated runtime exit code.
           $cli = Resolve-Path '..\VSCode-win32-x64\bin\codeforge.cmd'
           $expectedVersion = (Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json).version
           $versionOutput = @(& $cli --version)
@@ -88,13 +80,45 @@ jobs:
             if ((Get-Item -LiteralPath $setup).Length -lt 1MB) { throw "Installer is unexpectedly small: $setup" }
           }
 
-      - name: Install, launch, and uninstall system package
+      - name: Install, verify, and uninstall user package
         shell: pwsh
         run: |
-          $setup = Resolve-Path '.build\win32-x64\system-setup\VSCodeSetup.exe'
+          function Invoke-BoundedProcess {
+            param(
+              [Parameter(Mandatory = $true)][string]$FilePath,
+              [string[]]$ArgumentList = @(),
+              [Parameter(Mandatory = $true)][string]$Label,
+              [int]$TimeoutSeconds = 240
+            )
+
+            Write-Host "Starting $Label: $FilePath $($ArgumentList -join ' ')"
+            $process = Start-Process -FilePath $FilePath -ArgumentList $ArgumentList -PassThru -WindowStyle Hidden
+            if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+              Write-Host "$Label exceeded ${TimeoutSeconds}s; terminating process tree."
+              & taskkill.exe /PID $process.Id /T /F 2>$null | Out-Null
+              throw "$Label timed out after ${TimeoutSeconds}s."
+            }
+            if ($process.ExitCode -ne 0) {
+              throw "$Label exited with code $($process.ExitCode)."
+            }
+            Write-Host "$Label completed successfully."
+          }
+
+          # Build and size-check both installers, but install-test the per-user package in CI.
+          # The machine-wide installer can require elevation/session behavior that is not
+          # representative on a non-interactive GitHub-hosted runner.
+          $setup = Resolve-Path '.build\win32-x64\user-setup\VSCodeSetup.exe'
           $installDir = Join-Path $env:RUNNER_TEMP 'CodeForge-install-test'
-          $process = Start-Process -FilePath $setup -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', "/DIR=$installDir" -Wait -PassThru -WindowStyle Hidden
-          if ($process.ExitCode -ne 0) { throw "Installer exited with $($process.ExitCode)." }
+          if (Test-Path -LiteralPath $installDir) { Remove-Item -LiteralPath $installDir -Recurse -Force }
+
+          Invoke-BoundedProcess -FilePath $setup -Label 'CodeForge user installer' -TimeoutSeconds 300 -ArgumentList @(
+            '/VERYSILENT',
+            '/SUPPRESSMSGBOXES',
+            '/NORESTART',
+            '/CLOSEAPPLICATIONS',
+            '/RESTARTAPPLICATIONS=false',
+            "/DIR=$installDir"
+          )
 
           $installedApp = Join-Path $installDir 'CodeForge.exe'
           if (-not (Test-Path -LiteralPath $installedApp)) { throw 'Installed CodeForge.exe was not found.' }
@@ -108,11 +132,28 @@ jobs:
           if ($versionOutput.Count -lt 1 -or $versionOutput[0].Trim() -ne $expectedVersion) {
             throw "Installed CodeForge CLI reported an unexpected version. Expected '$expectedVersion', got '$($versionOutput -join ' | ')'."
           }
+          Write-Host "Installed CodeForge CLI version verified: $($versionOutput[0])"
+
+          # Ensure no CodeForge process from the test installation can keep Inno Setup waiting.
+          Get-CimInstance Win32_Process -Filter "Name = 'CodeForge.exe'" -ErrorAction SilentlyContinue | ForEach-Object {
+            if ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($installDir, [System.StringComparison]::OrdinalIgnoreCase)) {
+              Write-Host "Stopping leftover CodeForge process $($_.ProcessId) before uninstall."
+              & taskkill.exe /PID $_.ProcessId /T /F 2>$null | Out-Null
+            }
+          }
 
           $uninstaller = Join-Path $installDir 'unins000.exe'
           if (-not (Test-Path -LiteralPath $uninstaller)) { throw 'CodeForge uninstaller was not found.' }
-          $uninstall = Start-Process -FilePath $uninstaller -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait -PassThru -WindowStyle Hidden
-          if ($uninstall.ExitCode -ne 0) { throw "Uninstaller exited with $($uninstall.ExitCode)." }
+          Invoke-BoundedProcess -FilePath $uninstaller -Label 'CodeForge user uninstaller' -TimeoutSeconds 180 -ArgumentList @(
+            '/VERYSILENT',
+            '/SUPPRESSMSGBOXES',
+            '/NORESTART'
+          )
+
+          Start-Sleep -Seconds 2
+          if (Test-Path -LiteralPath $installedApp) {
+            throw 'CodeForge.exe still exists after the uninstall smoke test.'
+          }
 
       - name: Upload verified unsigned installers
         uses: actions/upload-artifact@v4
